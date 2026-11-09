@@ -154,7 +154,8 @@
               <span>拍照认牌</span>
             </div>
             <p class="muted small vision-hint">谁胡谁拍。模型只认画面最下面一排胡牌，上半桌牌河会忽略。对着照片思考鬼牌（百搭）和胡法，结果必须人眼核对后才算分。</p>
-            <input id="vision-file" class="sr-only" type="file" accept="image/*" aria-label="拍摄或选择牌面照片">
+            <input id="vision-file" class="sr-only" type="file" accept="image/*" aria-label="从相册选择牌面照片">
+            <input id="vision-file-camera" class="sr-only" type="file" accept="image/*" capture="environment" aria-label="拍摄牌面照片">
             <div class="voice-row">
               <button id="btn-vision" class="btn btn-primary" type="button">
                 <svg aria-hidden="true"><use href="#i-camera"/></svg>拍照认牌
@@ -261,6 +262,19 @@
         <button id="btn-edit-cancel" class="btn btn-outline" type="button">取消</button>
         <button id="btn-edit-save" class="btn btn-primary" type="button">保存</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 移动端：拍照或相册 -->
+  <div id="vision-pick-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="vision-pick-title">
+    <div class="modal-box vision-pick-box">
+      <h2 id="vision-pick-title">拍照认牌</h2>
+      <p class="muted small">拍最下面一排胡牌，或从相册选一张已拍好的。</p>
+      <button id="btn-vision-camera" class="btn btn-primary btn-block" type="button">
+        <svg aria-hidden="true"><use href="#i-camera"/></svg>打开相机拍摄
+      </button>
+      <button id="btn-vision-album" class="btn btn-outline btn-block" type="button">从相册选择</button>
+      <button id="btn-vision-pick-cancel" class="btn btn-text btn-block" type="button">取消</button>
     </div>
   </div>
 

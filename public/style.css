@@ -268,6 +268,9 @@ tr:last-child td{border-bottom:none}
 .modal-hr{border:none;border-top:1px dashed var(--line-strong);margin:16px 0 12px}
 .subhead{font-size:15px;margin:0 0 8px}
 .vision-card .vision-hint{margin:0 0 4px;line-height:1.65}
+.vision-pick-box{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+.vision-pick-box .btn-block{margin-top:10px}
+.vision-pick-box .btn-text{margin-top:4px}
 .vision-box{max-height:92vh}
 .vision-desc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.7;white-space:pre-wrap;margin-bottom:10px}
 .vision-block{margin-top:14px}

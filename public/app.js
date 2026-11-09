@@ -187,6 +187,7 @@ async function enterMain() {
     if (!$('#edit-modal').classList.contains('hidden')) return
     if (!$('#llm-modal').classList.contains('hidden')) return
     if (!$('#vision-modal').classList.contains('hidden')) return
+    if (!$('#vision-pick-modal').classList.contains('hidden')) return
     loadData(true)
   }, 4000)
 }
@@ -813,6 +814,32 @@ async function compressImage(file) {
   return c.toDataURL('image/jpeg', 0.72)
 }
 
+function isMobileClient() {
+  if (navigator.userAgentData && navigator.userAgentData.mobile) return true
+  return /Android|iPhone|iPod|iPad|webOS|Mobile/i.test(navigator.userAgent || '')
+}
+
+function startVisionCapture() {
+  if (!Vision.cfg?.configured) {
+    toast('请先在右上角设置里填入拍照识别 API Key')
+    openLlmModal()
+    return
+  }
+  if (isMobileClient()) {
+    $('#vision-pick-modal').classList.remove('hidden')
+    return
+  }
+  openVisionFile(false)
+}
+
+function openVisionFile(useCamera) {
+  $('#vision-pick-modal').classList.add('hidden')
+  const el = useCamera ? $('#vision-file-camera') : $('#vision-file')
+  if (!el) return
+  el.value = ''
+  el.click()
+}
+
 async function onVisionFile(e) {
   const file = e.target.files && e.target.files[0]
   e.target.value = ''
@@ -1140,19 +1167,18 @@ function bind() {
   $$('#vlm-thinking [data-thinking]').forEach((b) => {
     b.onclick = () => setThinkingUi(b.dataset.thinking === 'true')
   })
-  $('#btn-vision').onclick = () => {
-    if (!Vision.cfg?.configured) {
-      toast('请先在右上角设置里填入拍照识别 API Key')
-      openLlmModal()
-      return
-    }
-    $('#vision-file').click()
-  }
+  $('#btn-vision').onclick = startVisionCapture
   $('#vision-file').onchange = onVisionFile
+  $('#vision-file-camera').onchange = onVisionFile
+  $('#btn-vision-camera').onclick = () => openVisionFile(true)
+  $('#btn-vision-album').onclick = () => openVisionFile(false)
+  $('#btn-vision-pick-cancel').onclick = () => $('#vision-pick-modal').classList.add('hidden')
+  $('#vision-pick-modal').onclick = (e) => {
+    if (e.target.id === 'vision-pick-modal') $('#vision-pick-modal').classList.add('hidden')
+  }
   $('#btn-vision-retake').onclick = () => {
     $('#vision-modal').classList.add('hidden')
-    $('#vision-file').value = ''
-    $('#vision-file').click()
+    startVisionCapture()
   }
   $('#btn-vision-score').onclick = confirmVisionAndScore
   $('#btn-llm-close').onclick = () => $('#llm-modal').classList.add('hidden')
