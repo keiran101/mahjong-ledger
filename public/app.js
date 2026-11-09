@@ -598,29 +598,19 @@ function escHtml(s) {
 async function initLLM() {
   try { VS.llm = await api('/api/llm-config') } catch { VS.llm = null }
   try { Vision.cfg = await api('/api/vlm-config') } catch { Vision.cfg = null }
-  updateLlmBadge()
-  updateVlmBadge()
+  Vision.thinking = !!(Vision.cfg && Vision.cfg.enableThinking)
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
   if (SR) $('#btn-mic').classList.remove('hidden')
   else $('#voice-tip').textContent = '此浏览器不支持网页内识别，请用手机输入法的「语音输入」把话变成文字'
 }
 
-function updateLlmBadge() {
-  const c = VS.llm
-  const el = $('#llm-badge')
-  if (!c) { el.textContent = '状态未知'; return }
-  if (c.source === 'env') el.textContent = c.configured ? 'LLM · 服务端配置' : '规则模式'
-  else if (c.configured) el.textContent = `LLM · ${c.model}`
-  else el.textContent = '规则模式 · 点设置接 LLM'
-}
-
-function updateVlmBadge() {
-  const el = $('#vlm-badge')
-  if (!el) return
-  const c = Vision.cfg
-  if (!c) { el.textContent = '状态未知'; return }
-  if (c.configured) el.textContent = `Qwen3.7 · ${c.model}`
-  else el.textContent = '未配置 · 点设置填通义 Key'
+function setThinkingUi(on) {
+  Vision.thinking = !!on
+  $$('#vlm-thinking [data-thinking]').forEach((b) => {
+    const active = (b.dataset.thinking === 'true') === Vision.thinking
+    b.classList.toggle('active', active)
+    b.setAttribute('aria-pressed', active ? 'true' : 'false')
+  })
 }
 
 function openLlmModal() {
@@ -636,10 +626,11 @@ function openLlmModal() {
   $('#llm-key').value = ''
   $('#vlm-key').value = ''
   const v = Vision.cfg
+  setThinkingUi(!!(v && v.enableThinking))
   if (v) {
-    $('#vlm-status').textContent = v.source === 'env'
-      ? `拍照识别由环境变量配置 · ${v.model}`
-      : (v.configured ? `已就绪 · ${v.model}（${v.source === 'llm' ? '共用通义 Key' : '独立 Key'}）` : '尚未配置通义千问 Key，拍照识别不可用')
+    $('#vlm-status').textContent = v.configured
+      ? (v.enableThinking ? '拍照识别已就绪 · 思考模式开' : '拍照识别已就绪 · 思考模式关')
+      : '尚未配置拍照识别 Key'
   }
   $('#llm-modal').classList.remove('hidden')
 }
@@ -658,14 +649,10 @@ async function saveLlm(extra) {
   const off = extra && extra.enabled === false
   try {
     VS.llm = await api('/api/llm-config', llmFormBody(extra || {}))
-    updateLlmBadge()
+    const vlmBody = { enableThinking: !!Vision.thinking }
     const vlmKey = $('#vlm-key').value.trim()
-    if (vlmKey) {
-      Vision.cfg = await api('/api/vlm-config', { apiKey: vlmKey })
-    } else {
-      try { Vision.cfg = await api('/api/vlm-config') } catch { /* ignore */ }
-    }
-    updateVlmBadge()
+    if (vlmKey) vlmBody.apiKey = vlmKey
+    try { Vision.cfg = await api('/api/vlm-config', vlmBody) } catch { /* ignore */ }
     $('#llm-status').textContent = off ? '已停用，现在只用规则模式' : '已保存'
     toast(off ? '已停用 LLM' : 'LLM 配置已保存')
     if (!off) $('#llm-modal').classList.add('hidden')
@@ -676,7 +663,6 @@ async function testLlm() {
   $('#llm-status').textContent = '正在测试…'
   try {
     VS.llm = await api('/api/llm-config', llmFormBody())
-    updateLlmBadge()
     const t = await api('/api/llm-config/test', {})
     $('#llm-status').textContent = `连接成功 · ${t.model} · ${t.ms}ms · 回复「${t.sample}」`
   } catch (e) { $('#llm-status').textContent = `连接失败：${e.message}` }
@@ -831,7 +817,8 @@ async function onVisionFile(e) {
   const file = e.target.files && e.target.files[0]
   e.target.value = ''
   if (!file) return
-  return busy($('#btn-vision'), '识别中…', async () => {
+  const thinking = !!(Vision.cfg && Vision.cfg.enableThinking)
+  return busy($('#btn-vision'), thinking ? '看图思考中…' : '识别中…', async () => {
     try {
       const image = await compressImage(file)
       const r = await api(`/api/rooms/${S.code}/vision`, {
@@ -1149,10 +1136,13 @@ function bind() {
 
   $('#btn-parse').onclick = doParse
   $('#btn-mic').onclick = toggleMic
-  $('#btn-voice-settings').onclick = openLlmModal
+  $('#btn-settings').onclick = openLlmModal
+  $$('#vlm-thinking [data-thinking]').forEach((b) => {
+    b.onclick = () => setThinkingUi(b.dataset.thinking === 'true')
+  })
   $('#btn-vision').onclick = () => {
     if (!Vision.cfg?.configured) {
-      toast('请先在设置里填入通义千问 API Key')
+      toast('请先在右上角设置里填入拍照识别 API Key')
       openLlmModal()
       return
     }

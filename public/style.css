@@ -108,7 +108,8 @@ svg circle{fill:currentColor;stroke:none}
 
 /* ---------- 主界面骨架 ---------- */
 .topbar{background:var(--felt-deep);color:var(--on-felt);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.topbar-id{min-width:0}
+.topbar-id{min-width:0;flex:1}
+.topbar-actions{display:flex;align-items:center;gap:8px;flex:none}
 .room-name{font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .room-code{font-size:12px;color:var(--on-felt-dim);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #panels{padding:0 0 calc(86px + env(safe-area-inset-bottom))}
