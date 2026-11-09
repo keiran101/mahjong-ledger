@@ -15,6 +15,8 @@ import {
 } from './lib/store.mjs'
 import { getConfig, saveConfig, testConnection } from './lib/llm.mjs'
 import { parseRound } from './lib/parse.mjs'
+import { getVlmConfig, saveVlmConfig } from './lib/vlm.mjs'
+import { recognizeHand } from './lib/vision.mjs'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
 const PUBLIC = join(ROOT, 'public')
@@ -45,12 +47,12 @@ function fail(res, status, msg) {
   send(res, status, { error: msg })
 }
 
-async function readBody(req) {
+async function readBody(req, maxBytes = 1024 * 1024) {
   const chunks = []
   let size = 0
   for await (const c of req) {
     size += c.length
-    if (size > 1024 * 1024) throw new Error('请求体过大')
+    if (size > maxBytes) throw new Error('请求体过大')
     chunks.push(c)
   }
   if (!chunks.length) return {}
@@ -115,6 +117,12 @@ async function handleApi(req, res, pathname) {
     catch (e) { return fail(res, 400, e.message) }
   }
 
+  if (pathname === '/api/vlm-config' && method === 'GET') return send(res, 200, getVlmConfig())
+  if (pathname === '/api/vlm-config' && method === 'POST') {
+    const b = await readBody(req)
+    return send(res, 200, saveVlmConfig(b))
+  }
+
   // 创建房间
   if (pathname === '/api/rooms' && method === 'POST') {
     const b = await readBody(req)
@@ -141,6 +149,26 @@ async function handleApi(req, res, pathname) {
       const b = await readBody(req)
       setDealer(code, b.dealer)
       return send(res, 200, fullState(code))
+    }
+
+    // 拍照认牌：只返回待确认草稿，绝不算分
+    if (tail[0] === 'vision' && method === 'POST') {
+      const b = await readBody(req, 5.5 * 1024 * 1024)
+      const image = String(b.image || '')
+      if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(image)) {
+        throw new Error('请上传 jpeg / png / webp 照片')
+      }
+      const photographer = SEATS.includes(b.photographer) ? b.photographer : null
+      const state = fullState(code)
+      const result = await recognizeHand(image, {
+        dealer: state.dealer,
+        photographer,
+        players: state.players,
+      })
+      if (result.draft && ('perPlayer' in result.draft || 'detail' in result.draft)) {
+        throw new Error('内部错误：识别通道不得附带分数')
+      }
+      return send(res, 200, result)
     }
 
     // 语音/文字解析：自然语言 → 结构化字段 → 复用计分纯函数（只预览，不落账）

@@ -20,6 +20,7 @@
   <symbol id="i-tile" viewBox="0 0 24 24"><rect x="4.5" y="2" width="15" height="20" rx="2.4"/><path d="M8.5 8h7M8.5 12h7M8.5 16h7"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2z"/><circle cx="12" cy="14" r="3.2" fill="none"/></symbol>
 </svg>
 
 <a class="skip-link" href="#panels">跳到主要内容</a>
@@ -143,7 +144,21 @@
             <div id="voice-tip" class="muted small">用手机输入法的「语音输入」说话最快；也可点「点一下说话」</div>
             <div id="voice-result" class="voice-result hidden"></div>
           </div>
-          <div class="section-title voice-divider"><span class="muted small">不想说话？按下面 1–5 步手动记分</span></div>
+
+          <div class="card voice-card vision-card">
+            <div class="section-title">
+              <span>拍照认牌</span>
+              <span id="vlm-badge" class="badge muted small">检测中…</span>
+            </div>
+            <p class="muted small vision-hint">谁胡谁拍。上排马、中排副露（点杠横牌位置=放杠人）、下排手牌全翻开。识别结果必须人眼核对，确认后才算分。</p>
+            <input id="vision-file" class="sr-only" type="file" accept="image/*" aria-label="拍摄或选择牌面照片">
+            <div class="voice-row">
+              <button id="btn-vision" class="btn btn-primary" type="button">
+                <svg aria-hidden="true"><use href="#i-camera"/></svg>拍照认牌
+              </button>
+            </div>
+          </div>
+          <div class="section-title voice-divider"><span class="muted small">不想说话或拍照？按下面 1–5 步手动记分</span></div>
         </div>
 
         <div class="score-steps">
@@ -246,6 +261,21 @@
     </div>
   </div>
 
+  <!-- 拍照认牌核对弹层：VLM 易错项全部在这里确认，确认前不算分 -->
+  <div id="vision-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="vision-title">
+    <div class="modal-box vision-box">
+      <h2 id="vision-title">核对识别结果</h2>
+      <p class="muted small">视觉模型会数错张数、看错横竖、不知道本局鬼牌。下面每一项都请人眼确认，确认后才算分。</p>
+      <div id="vision-desc" class="vision-desc"></div>
+      <div id="vision-warn" class="voice-warn hidden"></div>
+      <div id="vision-form"></div>
+      <div class="modal-actions">
+        <button id="btn-vision-retake" class="btn btn-outline" type="button">重拍</button>
+        <button id="btn-vision-score" class="btn btn-primary" type="button">确认并算分</button>
+      </div>
+    </div>
+  </div>
+
   <!-- LLM 设置弹层 -->
   <div id="llm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="llm-title">
     <div class="modal-box">
@@ -266,6 +296,11 @@
         <button id="btn-llm-disable" class="btn btn-ghost" type="button">停用，只用规则模式</button>
       </div>
       <div id="llm-status" class="muted small" role="status" aria-live="polite"></div>
+      <hr class="modal-hr">
+      <h2 class="subhead">拍照识别（Qwen3.7）</h2>
+      <p class="muted small">独立调用通义千问 <code>qwen3.7-plus</code> 看图，只读牌不算分。若上面选了通义千问，自动共用 Key；语音若用 DeepSeek，请在此另填通义 Key。</p>
+      <label class="field"><span>拍照识别 API Key</span><input id="vlm-key" type="password" placeholder="留空表示不修改 / 共用通义 Key" autocomplete="off" spellcheck="false"></label>
+      <div id="vlm-status" class="muted small" role="status" aria-live="polite"></div>
       <div class="modal-actions">
         <button id="btn-llm-close" class="btn btn-outline" type="button">关闭</button>
         <button id="btn-llm-test" class="btn btn-outline" type="button">测试连接</button>

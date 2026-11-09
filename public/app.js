@@ -40,7 +40,7 @@ function toast(msg) {
 /** 按钮忙碌态：保留文字、前置旋转指示器、禁用重复提交，结束后恢复原禁用状态 */
 async function busy(btn, label, fn) {
   if (!btn || btn.disabled) return
-  const old = btn.textContent
+  const old = btn.innerHTML
   const wasDisabled = btn.disabled
   btn.disabled = true
   btn.setAttribute('aria-busy', 'true')
@@ -49,7 +49,7 @@ async function busy(btn, label, fn) {
   finally {
     btn.disabled = wasDisabled
     btn.removeAttribute('aria-busy')
-    btn.textContent = old
+    btn.innerHTML = old
   }
 }
 
@@ -186,6 +186,7 @@ async function enterMain() {
     if (!$('#preview-modal').classList.contains('hidden')) return
     if (!$('#edit-modal').classList.contains('hidden')) return
     if (!$('#llm-modal').classList.contains('hidden')) return
+    if (!$('#vision-modal').classList.contains('hidden')) return
     loadData(true)
   }, 4000)
 }
@@ -390,6 +391,7 @@ async function doPreview() {
         gangEvents: f.gangEvents,
       })
       S.preview = r
+      S.previewSource = 'manual'
       showPreview(r.detail, r.input)
     } catch (e) { toast(e.message) }
   })
@@ -578,6 +580,15 @@ function renderStats(d) {
 /* 铁律：LLM 只把口述抽成字段，分数一律由服务端计分引擎算，前端只做核对与确认 */
 
 const VS = { parsed: null, llm: null, rec: null, recording: false }
+const Vision = { cfg: null, draft: null, form: null }
+const SPECIALS = [
+  { id: 'none', name: '普通自摸' },
+  { id: 'qianggang', name: '抢杠胡' },
+  { id: 'gangkai', name: '杠上开花' },
+  { id: 'haidi', name: '海底捞月' },
+  { id: 'tian', name: '天胡' },
+  { id: 'di', name: '地胡' },
+]
 
 function escHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -586,7 +597,9 @@ function escHtml(s) {
 
 async function initLLM() {
   try { VS.llm = await api('/api/llm-config') } catch { VS.llm = null }
+  try { Vision.cfg = await api('/api/vlm-config') } catch { Vision.cfg = null }
   updateLlmBadge()
+  updateVlmBadge()
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
   if (SR) $('#btn-mic').classList.remove('hidden')
   else $('#voice-tip').textContent = '此浏览器不支持网页内识别，请用手机输入法的「语音输入」把话变成文字'
@@ -601,6 +614,15 @@ function updateLlmBadge() {
   else el.textContent = '规则模式 · 点设置接 LLM'
 }
 
+function updateVlmBadge() {
+  const el = $('#vlm-badge')
+  if (!el) return
+  const c = Vision.cfg
+  if (!c) { el.textContent = '状态未知'; return }
+  if (c.configured) el.textContent = `Qwen3.7 · ${c.model}`
+  else el.textContent = '未配置 · 点设置填通义 Key'
+}
+
 function openLlmModal() {
   const c = VS.llm
   if (c) {
@@ -612,6 +634,13 @@ function openLlmModal() {
       : (c.hasKey ? '已保存密钥（不回显）' : '尚未填写 API Key')
   }
   $('#llm-key').value = ''
+  $('#vlm-key').value = ''
+  const v = Vision.cfg
+  if (v) {
+    $('#vlm-status').textContent = v.source === 'env'
+      ? `拍照识别由环境变量配置 · ${v.model}`
+      : (v.configured ? `已就绪 · ${v.model}（${v.source === 'llm' ? '共用通义 Key' : '独立 Key'}）` : '尚未配置通义千问 Key，拍照识别不可用')
+  }
   $('#llm-modal').classList.remove('hidden')
 }
 
@@ -630,6 +659,13 @@ async function saveLlm(extra) {
   try {
     VS.llm = await api('/api/llm-config', llmFormBody(extra || {}))
     updateLlmBadge()
+    const vlmKey = $('#vlm-key').value.trim()
+    if (vlmKey) {
+      Vision.cfg = await api('/api/vlm-config', { apiKey: vlmKey })
+    } else {
+      try { Vision.cfg = await api('/api/vlm-config') } catch { /* ignore */ }
+    }
+    updateVlmBadge()
     $('#llm-status').textContent = off ? '已停用，现在只用规则模式' : '已保存'
     toast(off ? '已停用 LLM' : 'LLM 配置已保存')
     if (!off) $('#llm-modal').classList.add('hidden')
@@ -758,6 +794,322 @@ async function confirmParsed() {
   })
 }
 
+/* ---------- 拍照认牌 ---------- */
+/* 铁律：VLM 只出牌面草稿；易错项全部进核对弹窗；确认后才走 scoreRound */
+
+function tileOptions(selected, emptyLabel) {
+  const empty = emptyLabel != null ? `<option value="">${escHtml(emptyLabel)}</option>` : ''
+  return empty + HORSE_TILES.map((t) =>
+    `<option value="${t}" ${t === selected ? 'selected' : ''}>${t}</option>`).join('')
+}
+
+function chipBtn(label, on, attrs) {
+  return `<button type="button" class="chip ${on ? 'active' : ''}" aria-pressed="${on}" ${attrs}>${escHtml(label)}</button>`
+}
+
+async function compressImage(file) {
+  if (!file || !String(file.type || '').startsWith('image/')) throw new Error('请选择照片')
+  let bmp
+  try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }) }
+  catch { bmp = await createImageBitmap(file) }
+  const max = 1600
+  let w = bmp.width, h = bmp.height
+  if (w > max || h > max) {
+    const s = max / Math.max(w, h)
+    w = Math.round(w * s)
+    h = Math.round(h * s)
+  }
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  c.getContext('2d').drawImage(bmp, 0, 0, w, h)
+  if (bmp.close) bmp.close()
+  return c.toDataURL('image/jpeg', 0.72)
+}
+
+async function onVisionFile(e) {
+  const file = e.target.files && e.target.files[0]
+  e.target.value = ''
+  if (!file) return
+  return busy($('#btn-vision'), '识别中…', async () => {
+    try {
+      const image = await compressImage(file)
+      const r = await api(`/api/rooms/${S.code}/vision`, {
+        image,
+        photographer: S.identity,
+      })
+      if (r.detail || r.draft?.perPlayer) throw new Error('识别通道返回了分数，已拒绝')
+      openVisionModal(r.draft)
+    } catch (err) { toast(err.message) }
+  })
+}
+
+function openVisionModal(draft) {
+  Vision.draft = draft
+  const n = horseMax(draft.hasGhost !== false)
+  Vision.form = {
+    winner: draft.winner || S.identity,
+    hand: Array.isArray(draft.hand) ? draft.hand.slice() : [],
+    melds: (draft.melds || []).map((m) => ({
+      kind: m.kind || 'peng',
+      tiles: (m.tiles || []).slice(),
+      from: m.from || '',
+    })),
+    horses: Array.from({ length: n }, (_, i) => (draft.horses || [])[i] || ''),
+    ghostTile: draft.ghostTile || '',
+    hasGhost: draft.hasGhost !== false,
+    special: draft.special || 'none',
+    pattern: draft.pattern || '',
+    extraGangs: [],
+  }
+  S.previewSource = 'vision'
+  renderVisionForm()
+  $('#vision-modal').classList.remove('hidden')
+}
+
+function renderVisionForm() {
+  const f = Vision.form
+  const d = Vision.draft
+  if (!f) return
+  $('#vision-desc').textContent = (d && (d.description || d.notes?.join('\n'))) || '（无文字描述）'
+  const warns = d?.warnings || []
+  const box = $('#vision-warn')
+  box.innerHTML = warns.map((w) => `⚠ ${escHtml(w)}`).join('<br>')
+  box.classList.toggle('hidden', !warns.length)
+
+  const seatBtns = SEATS.map((s) =>
+    `<button type="button" class="seat-btn ${f.winner === s ? 'active' : ''}" data-v-winner="${s}" aria-pressed="${f.winner === s}"><span class="seat-name">${escHtml(seatLabel(s))}</span><small>${SN[s]}家</small></button>`).join('')
+
+  const handChips = f.hand.map((t, i) =>
+    `<span class="tile-chip">${escHtml(t)}<button type="button" data-del-hand="${i}" aria-label="删除 ${escHtml(t)}">×</button></span>`).join('')
+
+  const meldHtml = f.melds.map((m, i) => {
+    const shown = (m.tiles || []).map((t, ti) => {
+      const heng = d?.melds?.[i]?.orients?.[ti] === 'heng'
+      return `<span class="${heng ? 'heng' : ''}">${escHtml(t)}${heng ? '(横)' : ''}</span>`
+    }).join(' ')
+    return `<div class="meld-card" data-meld="${i}">
+      <div class="meld-tiles">${shown || '（无牌）'}</div>
+      <div class="gang-item">
+        <select class="g-type" data-meld-kind="${i}" aria-label="副露类型">
+          <option value="peng" ${m.kind === 'peng' ? 'selected' : ''}>碰（不计分）</option>
+          <option value="dian" ${m.kind === 'dian' ? 'selected' : ''}>点杠</option>
+          <option value="bu" ${m.kind === 'bu' ? 'selected' : ''}>补杠</option>
+          <option value="an" ${m.kind === 'an' ? 'selected' : ''}>暗杠</option>
+        </select>
+        <select class="g-from" data-meld-from="${i}" ${m.kind !== 'dian' ? 'disabled' : ''} aria-label="放杠者">
+          <option value="">放杠者</option>
+          ${SEATS.filter((s) => s !== f.winner).map((s) =>
+            `<option value="${s}" ${m.from === s ? 'selected' : ''}>${escHtml(seatLabel(s))}放</option>`).join('')}
+        </select>
+        <button class="gang-del" type="button" data-del-meld="${i}" aria-label="删除这组副露">×</button>
+      </div>
+    </div>`
+  }).join('') || `<p class="muted small">没有识别到副露。若有杠请点下方添加。</p>`
+
+  const extraGang = (f.extraGangs || []).map((g, i) =>
+    `<div class="gang-item">
+      <select data-xg-type="${i}" aria-label="杠的类型">
+        <option value="an" ${g.type === 'an' ? 'selected' : ''}>暗杠</option>
+        <option value="bu" ${g.type === 'bu' ? 'selected' : ''}>补杠</option>
+        <option value="dian" ${g.type === 'dian' ? 'selected' : ''}>点杠</option>
+      </select>
+      <select data-xg-by="${i}" aria-label="杠牌者">${SEATS.map((s) =>
+        `<option value="${s}" ${g.by === s ? 'selected' : ''}>${escHtml(seatLabel(s))}</option>`).join('')}</select>
+      <select data-xg-from="${i}" ${g.type !== 'dian' ? 'disabled' : ''} aria-label="放杠者">${SEATS.map((s) =>
+        `<option value="${s}" ${g.from === s ? 'selected' : ''}>${escHtml(seatLabel(s))}放</option>`).join('')}</select>
+      <button class="gang-del" type="button" data-del-xg="${i}" aria-label="删除这条杠">×</button>
+    </div>`).join('')
+
+  const nHorse = horseMax(f.hasGhost)
+  f.horses = Array.from({ length: nHorse }, (_, i) => f.horses[i] || '')
+  const horseHtml = `<div class="horse-row ${nHorse > 4 ? 'six' : ''}">${f.horses.map((v, i) =>
+    `<select data-v-horse="${i}" aria-label="第 ${i + 1} 张马">${tileOptions(v, '未中')}</select>`).join('')}</div>`
+
+  const ghostBtns = `
+    <div class="seg" id="vision-ghost">
+      <button type="button" data-v-ghost="true" class="${f.hasGhost ? 'active' : ''}" aria-pressed="${f.hasGhost}">有鬼</button>
+      <button type="button" data-v-ghost="false" class="${!f.hasGhost ? 'active' : ''}" aria-pressed="${!f.hasGhost}">硬胡（无鬼 ×2）</button>
+    </div>
+    <label class="field" style="margin-top:8px"><span>本局鬼牌（翻牌+1，不知道可留空）</span>
+      <select id="vision-ghost-tile">${tileOptions(f.ghostTile, '不知道 / 不填')}</select>
+    </label>`
+
+  const specialHtml = `<div class="chips">${SPECIALS.map((s) =>
+    chipBtn(s.name, f.special === s.id, `data-v-special="${s.id}"`)).join('')}</div>`
+
+  const patternHtml = (S.rules?.patterns || []).map((g) =>
+    `<div class="pgroup">
+      <div class="pgroup-head"><span>第 ${g.times} 档</span><b>有鬼 ${g.withGhost} / 硬胡 ${g.withoutGhost}</b></div>
+      <div class="chips">${g.patterns.map((p) =>
+        chipBtn(p, f.pattern === p, `data-v-pattern="${p}"`)).join('')}</div>
+    </div>`).join('')
+
+  $('#vision-form').innerHTML = `
+    <div class="vision-block">
+      <div class="section-title"><span>1 · 谁胡了</span><span class="vision-reason">默认拍照人</span></div>
+      <div class="seat-grid">${seatBtns}</div>
+    </div>
+    <div class="vision-block">
+      <div class="section-title"><span>2 · 手牌</span><span class="vision-reason">相同牌张数易错</span></div>
+      <div class="tile-chips">${handChips}</div>
+      <div class="tile-add">
+        <select id="vision-add-hand">${tileOptions('', '＋ 加一张手牌')}</select>
+      </div>
+    </div>
+    <div class="vision-block">
+      <div class="section-title"><span>3 · 副露 / 杠</span><span class="vision-reason">横竖、点杠补杠暗杠易混</span></div>
+      ${meldHtml}
+      <div class="section-title"><span>其他人的杠</span></div>
+      <div id="vision-extra-gangs">${extraGang}</div>
+      <button id="btn-vision-add-gang" class="btn btn-outline btn-block" type="button">＋ 添加一条杠</button>
+    </div>
+    <div class="vision-block">
+      <div class="section-title"><span>4 · 摸马</span><span class="vision-reason">马区可能划错行</span></div>
+      ${horseHtml}
+    </div>
+    <div class="vision-block">
+      <div class="section-title"><span>5 · 有无鬼</span><span class="vision-reason">鬼牌长得像普通牌</span></div>
+      ${ghostBtns}
+    </div>
+    <div class="vision-block">
+      <div class="section-title"><span>6 · 特殊胡</span><span class="vision-reason">牌面上没有这些信息</span></div>
+      ${specialHtml}
+    </div>
+    <div class="vision-block">
+      <div class="section-title"><span>7 · 胡法档位</span><span class="vision-reason">由牌面建议，请再核对</span></div>
+      <div class="pattern-groups">${patternHtml}</div>
+    </div>`
+
+  bindVisionForm()
+}
+
+function bindVisionForm() {
+  const f = Vision.form
+  $$('#vision-form [data-v-winner]').forEach((b) => {
+    b.onclick = () => { f.winner = b.dataset.vWinner; renderVisionForm() }
+  })
+  $$('#vision-form [data-del-hand]').forEach((b) => {
+    b.onclick = () => { f.hand.splice(Number(b.dataset.delHand), 1); renderVisionForm() }
+  })
+  const addHand = $('#vision-add-hand')
+  if (addHand) addHand.onchange = () => {
+    if (!addHand.value) return
+    f.hand.push(addHand.value)
+    renderVisionForm()
+  }
+  $$('#vision-form [data-meld-kind]').forEach((sel) => {
+    sel.onchange = () => {
+      const m = f.melds[Number(sel.dataset.meldKind)]
+      if (m) m.kind = sel.value
+      renderVisionForm()
+    }
+  })
+  $$('#vision-form [data-meld-from]').forEach((sel) => {
+    sel.onchange = () => {
+      const m = f.melds[Number(sel.dataset.meldFrom)]
+      if (m) m.from = sel.value
+    }
+  })
+  $$('#vision-form [data-del-meld]').forEach((b) => {
+    b.onclick = () => { f.melds.splice(Number(b.dataset.delMeld), 1); renderVisionForm() }
+  })
+  const addG = $('#btn-vision-add-gang')
+  if (addG) addG.onclick = () => {
+    f.extraGangs.push({ type: 'an', by: f.winner || 'E', from: '' })
+    renderVisionForm()
+  }
+  $$('#vision-form [data-xg-type]').forEach((sel) => {
+    sel.onchange = () => {
+      const g = f.extraGangs[Number(sel.dataset.xgType)]
+      if (g) g.type = sel.value
+      renderVisionForm()
+    }
+  })
+  $$('#vision-form [data-xg-by]').forEach((sel) => {
+    sel.onchange = () => {
+      const g = f.extraGangs[Number(sel.dataset.xgBy)]
+      if (g) g.by = sel.value
+    }
+  })
+  $$('#vision-form [data-xg-from]').forEach((sel) => {
+    sel.onchange = () => {
+      const g = f.extraGangs[Number(sel.dataset.xgFrom)]
+      if (g) g.from = sel.value
+    }
+  })
+  $$('#vision-form [data-del-xg]').forEach((b) => {
+    b.onclick = () => { f.extraGangs.splice(Number(b.dataset.delXg), 1); renderVisionForm() }
+  })
+  $$('#vision-form [data-v-horse]').forEach((sel) => {
+    sel.onchange = () => { f.horses[Number(sel.dataset.vHorse)] = sel.value }
+  })
+  $$('#vision-form [data-v-ghost]').forEach((b) => {
+    b.onclick = () => { f.hasGhost = b.dataset.vGhost === 'true'; renderVisionForm() }
+  })
+  const gt = $('#vision-ghost-tile')
+  if (gt) gt.onchange = () => {
+    f.ghostTile = gt.value
+    if (f.ghostTile) f.hasGhost = f.hand.includes(f.ghostTile)
+    renderVisionForm()
+  }
+  $$('#vision-form [data-v-special]').forEach((b) => {
+    b.onclick = () => {
+      f.special = b.dataset.vSpecial
+      const hit = SPECIALS.find((s) => s.id === f.special)
+      if (hit && hit.id !== 'none') f.pattern = hit.name
+      renderVisionForm()
+    }
+  })
+  $$('#vision-form [data-v-pattern]').forEach((b) => {
+    b.onclick = () => { f.pattern = b.dataset.vPattern; renderVisionForm() }
+  })
+}
+
+function collectVisionInput() {
+  const f = Vision.form
+  if (!f?.winner) throw new Error('请确认谁胡了')
+  if (!f.pattern) throw new Error('请确认胡法档位')
+  const gangEvents = []
+  for (const m of f.melds) {
+    if (m.kind === 'peng') continue
+    if (!['dian', 'bu', 'an'].includes(m.kind)) continue
+    const g = { type: m.kind, by: f.winner }
+    if (m.kind === 'dian') {
+      if (!m.from) throw new Error('点杠请选择放杠者')
+      g.from = m.from
+    }
+    gangEvents.push(g)
+  }
+  for (const g of f.extraGangs) {
+    if (g.type === 'dian' && !g.from) throw new Error('点杠请选择放杠者')
+    const row = { type: g.type, by: g.by }
+    if (g.type === 'dian') row.from = g.from
+    gangEvents.push(row)
+  }
+  return {
+    winner: f.winner,
+    pattern: f.pattern,
+    hasGhost: f.hasGhost,
+    horses: f.horses.filter(Boolean),
+    gangEvents,
+  }
+}
+
+async function confirmVisionAndScore() {
+  let input
+  try { input = collectVisionInput() } catch (e) { return toast(e.message) }
+  return busy($('#btn-vision-score'), '计算中…', async () => {
+    try {
+      const r = await api(`/api/rooms/${S.code}/preview`, input)
+      S.preview = r
+      S.previewSource = 'vision'
+      $('#vision-modal').classList.add('hidden')
+      showPreview(r.detail, r.input)
+    } catch (e) { toast(e.message) }
+  })
+}
+
 /* ---------- 事件绑定 ---------- */
 
 function bind() {
@@ -784,7 +1136,10 @@ function bind() {
   $('#btn-goto-score').onclick = () => switchTab('score')
   $('#btn-add-gang').onclick = addGang
   $('#btn-preview').onclick = doPreview
-  $('#btn-preview-back').onclick = () => $('#preview-modal').classList.add('hidden')
+  $('#btn-preview-back').onclick = () => {
+    $('#preview-modal').classList.add('hidden')
+    if (S.previewSource === 'vision' && Vision.form) $('#vision-modal').classList.remove('hidden')
+  }
   $('#btn-confirm').onclick = confirmScore
   $('#btn-edit-cancel').onclick = () => $('#edit-modal').classList.add('hidden')
   $('#btn-edit-save').onclick = saveEdit
@@ -794,6 +1149,21 @@ function bind() {
   $('#btn-parse').onclick = doParse
   $('#btn-mic').onclick = toggleMic
   $('#btn-voice-settings').onclick = openLlmModal
+  $('#btn-vision').onclick = () => {
+    if (!Vision.cfg?.configured) {
+      toast('请先在设置里填入通义千问 API Key')
+      openLlmModal()
+      return
+    }
+    $('#vision-file').click()
+  }
+  $('#vision-file').onchange = onVisionFile
+  $('#btn-vision-retake').onclick = () => {
+    $('#vision-modal').classList.add('hidden')
+    $('#vision-file').value = ''
+    $('#vision-file').click()
+  }
+  $('#btn-vision-score').onclick = confirmVisionAndScore
   $('#btn-llm-close').onclick = () => $('#llm-modal').classList.add('hidden')
   $('#btn-llm-save').onclick = () => saveLlm()
   $('#btn-llm-disable').onclick = () => saveLlm({ enabled: false })

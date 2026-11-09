@@ -5,7 +5,9 @@
   "type": "module",
   "description": "广东麻将记账 · 多人记分、自动结算与战绩统计",
   "scripts": {
-    "start": "node --experimental-sqlite --experimental-strip-types server.mjs"
+    "start": "node --experimental-sqlite --experimental-strip-types server.mjs",
+    "verify": "node --experimental-strip-types scripts/verify.ts",
+    "verify:vision": "node --experimental-strip-types scripts/verify-vision.ts"
   },
   "engines": {
     "node": ">=22.5"

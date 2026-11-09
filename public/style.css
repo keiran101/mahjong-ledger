@@ -262,7 +262,25 @@ tr:last-child td{border-bottom:none}
 .voice-actions{margin-top:14px}
 .voice-actions .btn{min-height:46px}
 #llm-status{margin-top:8px;line-height:1.6;word-break:break-all}
+#vlm-status{margin-top:8px;line-height:1.6;word-break:break-all}
 #llm-modal .voice-row .btn{flex:1}
+.modal-hr{border:none;border-top:1px dashed var(--line-strong);margin:16px 0 12px}
+.subhead{font-size:15px;margin:0 0 8px}
+.vision-card .vision-hint{margin:0 0 4px;line-height:1.65}
+.vision-box{max-height:92vh}
+.vision-desc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.7;white-space:pre-wrap;margin-bottom:10px}
+.vision-block{margin-top:14px}
+.vision-block .section-title{margin-top:0}
+.vision-reason{font-size:11px;color:var(--warn);font-weight:400;text-align:left}
+.tile-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tile-chip{display:inline-flex;align-items:center;gap:4px;min-height:36px;padding:0 6px 0 10px;border:1px solid var(--line-strong);border-radius:8px;background:#fff;font-size:13px;font-weight:600}
+.tile-chip button{width:28px;height:28px;border:none;background:transparent;color:var(--danger);font-size:16px;border-radius:6px}
+.tile-add{display:flex;gap:6px;align-items:center;margin-top:8px}
+.tile-add select{flex:1;height:var(--tap);border:1px solid var(--line-strong);border-radius:10px;background:#fff;padding:0 8px;min-width:0}
+.meld-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px}
+.meld-card .meld-tiles{font-size:13px;font-weight:600;margin-bottom:8px}
+.meld-card .heng{color:var(--gold)}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:#f1ece0;padding:1px 5px;border-radius:4px}
 
 /* ---------- 桌面真适配（≥900px） ---------- */
 @media (min-width:900px){
@@ -295,6 +313,7 @@ tr:last-child td{border-bottom:none}
   .score-steps>#btn-preview{grid-column:1/-1;max-width:360px;justify-self:end}
   .stats-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:24px;align-items:start}
   .modal-box{max-width:560px;border-radius:18px;margin-bottom:5vh;padding:22px 24px}
+  .vision-box{max-width:640px}
   .modal{align-items:center}
   #settle-net{grid-template-columns:repeat(4,1fr)}
   .toast{bottom:32px}

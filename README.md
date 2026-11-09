@@ -46,6 +46,9 @@ Windows 可双击 `start.bat`；WSL2 / macOS / Linux 用 `./start.sh`（若解�
 | `lib/store.mjs` | `node:sqlite` 持久化、房间/事件表、`computeState()` 重放 | 账本 **append-only**：改=追加 `correct`，删=追加 `void` |
 | `lib/parse.mjs` | 自然语言 → `RoundInput`；LLM 失败降级「规则模式」 | 结构化输出校验，非法输出拦截并如实标注 |
 | `lib/llm.mjs` | OpenAI 兼容 provider（DeepSeek / Qwen / 自定义） | 密钥只留服务端，不回显前端 |
+| `lib/vlm.mjs` | Qwen3.7 视觉调用（`chatVision`） | 与文本 LLM 分开；默认 `qwen3.7-plus` |
+| `lib/vision.mjs` | 照片 → 待确认牌面草稿 | **不算分**；张数/横竖/杠/鬼/特殊胡进核对弹窗 |
+| `lib/pattern.ts` | 确认后的牌面 → 胡法档位建议 | 多档取最高倍数 |
 | `server.mjs` | 原生 HTTP 单端口、静态资源 `no-store`、全部 API 路由 | 绑定 `0.0.0.0`，便于局域网手机访问 |
 | `public/index.html` / `style.css` / `app.js` | 前端三件套，零构建 | `app.js` 依赖 63 个 DOM 钩子，改 HTML 前先看 §9 |
 | `scripts/verify.ts` | 14 个规则算例回归 | 改规则后必跑 |
@@ -66,6 +69,10 @@ Windows 可双击 `start.bat`；WSL2 / macOS / Linux 用 `./start.sh`（若解�
 | `MJ_LLM_MODEL` | `deepseek-chat` | 模型名 |
 | `MJ_LLM_DISABLED` | 未设 | `=1` 强制停用 LLM，走规则模式 |
 | `MJ_LLM_CONF` | `data/llm-config.json` | 网页设置保存的配置文件路径 |
+| `MJ_VLM_API_KEY` | 空 | 拍照认牌专用通义 Key；不设则尝试复用「通义千问」文本通道的 Key |
+| `MJ_VLM_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Qwen3.7 视觉端点 |
+| `MJ_VLM_MODEL` | `qwen3.7-plus` | 视觉模型名 |
+| `MJ_VLM_CONF` | `data/vlm-config.json` | 拍照识别独立配置 |
 
 Windows PowerShell 示例：
 
@@ -104,6 +111,9 @@ curl http://localhost:3000/api/rules      # 规则表 + horseCount {withGhost:4,
 语音/文字 → lib/parse.mjs（LLM 只输出 {winner, pattern, hasGhost, horses, gangEvents}）
           → normalizeInput() → lib/score.ts scoreRound() → 预览页（可手改）
           → 确认 → lib/store.mjs append "score" 事件 → 重放得净分 → 看板/结算
+
+拍照 → lib/vlm.mjs chatVision() → lib/vision.mjs 草稿
+     → 核对弹窗（VLM 易错项全部确认）→ /preview → scoreRound() → 预览落账
 ```
 
 **铁律**：LLM 和前端都不允许产出分数；分数只由可验证的纯函数计算。重放时只累加冻结的 `net`，不重算旧局，所以改规则不会翻历史账。
@@ -134,6 +144,7 @@ MJ_DB=./demo/mahjong-demo.db npm start
 - 配置方式二选一：① 网页「设置」页填一次，存到 `data/llm-config.json`（密钥不回显）；② 本地开发用环境变量（优先）。
 - 语音输入走浏览器 Web Speech API，或直接用手机输入法的语音转文字；拿到的文本再走同一条解析链路。
 - 国内网络访问 DeepSeek / DashScope 如需代理，按你本机 Clash 配置正常走即可；服务端用的是标准 `fetch`。
+- **拍照认牌**用独立的 Qwen3.7 视觉调用（`lib/vlm.mjs`），只读牌；张数、横竖、杠型、鬼牌、特殊胡全部进核对弹窗，确认后才走计分引擎。
 
 ---
 
@@ -181,4 +192,6 @@ MJ_DB=./demo/mahjong-demo.db npm start
 | POST | `/api/rooms/:code/preview` | 算分预览（不落账） |
 | POST | `/api/rooms/:code/events` | 落账 / 手改 / 作废 |
 | POST | `/api/rooms/:code/parse` | 自然语言 → 结构化字段 |
+| POST | `/api/rooms/:code/vision` | 照片 → 牌面草稿（不算分）；核对后走 `/preview` |
+| GET/POST | `/api/vlm-config` | 拍照识别配置（脱敏）/ 保存 |
 | GET/POST | `/api/llm-config` | 读取（脱敏）/ 保存 / 测试连接 / 停用 |
