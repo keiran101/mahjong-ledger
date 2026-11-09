@@ -108,7 +108,8 @@ svg circle{fill:currentColor;stroke:none}
 
 /* ---------- 主界面骨架 ---------- */
 .topbar{background:var(--felt-deep);color:var(--on-felt);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.topbar-id{min-width:0}
+.topbar-id{min-width:0;flex:1}
+.topbar-actions{display:flex;align-items:center;gap:8px;flex:none}
 .room-name{font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .room-code{font-size:12px;color:var(--on-felt-dim);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #panels{padding:0 0 calc(86px + env(safe-area-inset-bottom))}
@@ -171,8 +172,13 @@ svg circle{fill:currentColor;stroke:none}
 .horse-row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .horse-row.six{grid-template-columns:repeat(3,1fr)}
 .horse-row select{width:100%;height:var(--tap);border:1px solid var(--line-strong);border-radius:10px;background:#fff;padding:0 4px;color:var(--ink);min-width:0}
-.gang-item{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.gang-item{display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
 .gang-item select{height:var(--tap);border:1px solid var(--line-strong);border-radius:8px;background:#fff;padding:0 4px;flex:1;min-width:0}
+.gang-item select[hidden]{display:none!important}
+.gang-flow{display:flex;align-items:center;gap:6px;flex:2 1 160px;min-width:0}
+.gang-flow select{flex:1}
+.gang-arrow{color:var(--muted);flex:none;font-size:13px}
+.gang-recv{flex:none;font-size:13px;font-weight:600;white-space:nowrap}
 .gang-del{width:var(--tap);height:var(--tap);border:none;background:#f6e7e4;color:var(--danger);border-radius:8px;font-size:18px}
 
 /* ---------- 记录 ---------- */
@@ -238,6 +244,9 @@ tr:last-child td{border-bottom:none}
 .net-edit input{width:100%;min-width:0;border:none;outline:none;background:transparent;font-size:18px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink)}
 .modal-actions{display:flex;gap:10px;margin-top:14px}
 .modal-actions .btn{flex:1;margin-top:0}
+.vision-actions{flex-wrap:wrap}
+.vision-actions .btn-outline{flex:1 1 calc(50% - 6px)}
+.vision-actions .btn-primary{flex:1 1 100%}
 .toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:rgba(16,26,22,.94);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:30;max-width:90vw;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.2)}
 
 /* ---------- 语音 / LLM 记分 ---------- */
@@ -267,6 +276,9 @@ tr:last-child td{border-bottom:none}
 .modal-hr{border:none;border-top:1px dashed var(--line-strong);margin:16px 0 12px}
 .subhead{font-size:15px;margin:0 0 8px}
 .vision-card .vision-hint{margin:0 0 4px;line-height:1.65}
+.vision-pick-box{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+.vision-pick-box .btn-block{margin-top:10px}
+.vision-pick-box .btn-text{margin-top:4px}
 .vision-box{max-height:92vh}
 .vision-desc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.7;white-space:pre-wrap;margin-bottom:10px}
 .vision-block{margin-top:14px}

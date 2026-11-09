@@ -21,6 +21,7 @@
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></symbol>
   <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2z"/><circle cx="12" cy="14" r="3.2" fill="none"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none"/><path d="M12 3.2v2.4M12 18.4v2.4M3.2 12h2.4M18.4 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></symbol>
 </svg>
 
 <a class="skip-link" href="#panels">跳到主要内容</a>
@@ -87,9 +88,14 @@
         <div class="room-name" id="top-name">牌局</div>
         <div class="room-code" id="top-code">房间码</div>
       </div>
-      <button id="btn-copy-link" class="btn btn-mini" type="button" aria-label="复制本牌局链接">
-        <svg aria-hidden="true"><use href="#i-share"/></svg>分享
-      </button>
+      <div class="topbar-actions">
+        <button id="btn-copy-link" class="btn btn-mini" type="button" aria-label="复制本牌局链接">
+          <svg aria-hidden="true"><use href="#i-share"/></svg>分享
+        </button>
+        <button id="btn-settings" class="btn btn-mini" type="button" aria-label="模型与识别设置">
+          <svg aria-hidden="true"><use href="#i-gear"/></svg>设置
+        </button>
+      </div>
     </header>
 
     <nav id="tabbar" aria-label="功能面板" role="tablist">
@@ -132,13 +138,11 @@
           <div class="card voice-card">
             <div class="section-title">
               <span>说一句就记分</span>
-              <span id="llm-badge" class="badge muted small">检测中…</span>
             </div>
             <label class="sr-only" for="voice-text">口述本局情况</label>
             <textarea id="voice-text" class="voice-input" rows="3" placeholder="例如：东家自摸鸡胡，有鬼，中马 5万和红中，赢家还暗杠了一把"></textarea>
             <div class="voice-row">
               <button id="btn-mic" class="btn btn-outline hidden" type="button">🎤 点一下说话</button>
-              <button id="btn-voice-settings" class="btn btn-ghost" type="button">⚙ 设置</button>
               <button id="btn-parse" class="btn btn-primary" type="button">解析并算分</button>
             </div>
             <div id="voice-tip" class="muted small">用手机输入法的「语音输入」说话最快；也可点「点一下说话」</div>
@@ -148,10 +152,10 @@
           <div class="card voice-card vision-card">
             <div class="section-title">
               <span>拍照认牌</span>
-              <span id="vlm-badge" class="badge muted small">检测中…</span>
             </div>
-            <p class="muted small vision-hint">谁胡谁拍。上排马、中排副露（点杠横牌位置=放杠人）、下排手牌全翻开。识别结果必须人眼核对，确认后才算分。</p>
-            <input id="vision-file" class="sr-only" type="file" accept="image/*" aria-label="拍摄或选择牌面照片">
+            <p class="muted small vision-hint">谁胡谁拍。模型只认画面最下面一排胡牌，上半桌牌河会忽略。对着照片思考鬼牌（百搭）和胡法，结果必须人眼核对后才算分。</p>
+            <input id="vision-file" class="sr-only" type="file" accept="image/*" aria-label="从相册选择牌面照片">
+            <input id="vision-file-camera" class="sr-only" type="file" accept="image/*" capture="environment" aria-label="拍摄牌面照片">
             <div class="voice-row">
               <button id="btn-vision" class="btn btn-primary" type="button">
                 <svg aria-hidden="true"><use href="#i-camera"/></svg>拍照认牌
@@ -261,6 +265,19 @@
     </div>
   </div>
 
+  <!-- 移动端：拍照或相册 -->
+  <div id="vision-pick-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="vision-pick-title">
+    <div class="modal-box vision-pick-box">
+      <h2 id="vision-pick-title">拍照认牌</h2>
+      <p class="muted small">拍最下面一排胡牌，或从相册选一张已拍好的。</p>
+      <button id="btn-vision-camera" class="btn btn-primary btn-block" type="button">
+        <svg aria-hidden="true"><use href="#i-camera"/></svg>打开相机拍摄
+      </button>
+      <button id="btn-vision-album" class="btn btn-outline btn-block" type="button">从相册选择</button>
+      <button id="btn-vision-pick-cancel" class="btn btn-text btn-block" type="button">取消</button>
+    </div>
+  </div>
+
   <!-- 拍照认牌核对弹层：VLM 易错项全部在这里确认，确认前不算分 -->
   <div id="vision-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="vision-title">
     <div class="modal-box vision-box">
@@ -269,8 +286,9 @@
       <div id="vision-desc" class="vision-desc"></div>
       <div id="vision-warn" class="voice-warn hidden"></div>
       <div id="vision-form"></div>
-      <div class="modal-actions">
-        <button id="btn-vision-retake" class="btn btn-outline" type="button">重拍</button>
+      <div class="modal-actions vision-actions">
+        <button id="btn-vision-cancel" class="btn btn-outline" type="button">取消</button>
+        <button id="btn-vision-manual" class="btn btn-outline" type="button">手动填分</button>
         <button id="btn-vision-score" class="btn btn-primary" type="button">确认并算分</button>
       </div>
     </div>
@@ -279,7 +297,7 @@
   <!-- LLM 设置弹层 -->
   <div id="llm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="llm-title">
     <div class="modal-box">
-      <h2 id="llm-title">LLM 设置</h2>
+      <h2 id="llm-title">设置</h2>
       <p class="muted small">密钥只保存在服务端，不会回显、不会写进网页或链接。未配置时自动使用「规则模式」解析，功能仍可用。</p>
       <label class="field">
         <span>服务商</span>
@@ -297,9 +315,17 @@
       </div>
       <div id="llm-status" class="muted small" role="status" aria-live="polite"></div>
       <hr class="modal-hr">
-      <h2 class="subhead">拍照识别（Qwen3.7）</h2>
-      <p class="muted small">独立调用通义千问 <code>qwen3.7-plus</code> 看图，只读牌不算分。若上面选了通义千问，自动共用 Key；语音若用 DeepSeek，请在此另填通义 Key。</p>
+      <h2 class="subhead">拍照识别</h2>
+      <p class="muted small">看图读牌，不算分。若上面选了通义千问，自动共用 Key；语音若用别的服务商，请在此另填看图用的 Key。</p>
       <label class="field"><span>拍照识别 API Key</span><input id="vlm-key" type="password" placeholder="留空表示不修改 / 共用通义 Key" autocomplete="off" spellcheck="false"></label>
+      <div class="field">
+        <span>思考模式</span>
+        <div id="vlm-thinking" class="seg" role="group" aria-label="拍照思考模式">
+          <button type="button" data-thinking="false" class="active" aria-pressed="true">关闭（更快）</button>
+          <button type="button" data-thinking="true" aria-pressed="false">开启（更慢、多想一步）</button>
+        </div>
+        <p class="muted small" style="margin-top:8px">开启后模型会花更长时间推理鬼牌和胡法。牌型简单时建议关掉。</p>
+      </div>
       <div id="vlm-status" class="muted small" role="status" aria-live="polite"></div>
       <div class="modal-actions">
         <button id="btn-llm-close" class="btn btn-outline" type="button">关闭</button>
