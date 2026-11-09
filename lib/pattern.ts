@@ -4,7 +4,7 @@
  */
 import { RULES } from './rules.ts'
 import {
-  countsOf, isHonor, isYao, normalizeTileName, suitOf, tileIndex,
+  countsOf, isHonor, isYao, normalizeTileName, suitOf, tileIndex, YAO_13,
 } from './tiles.ts'
 
 export type MeldKind = 'peng' | 'dian' | 'bu' | 'an'
@@ -29,6 +29,41 @@ export interface PatternResult {
   hasGhostInHand: boolean
 }
 
+export interface InferredPattern extends PatternResult {
+  inferredGhost: string | null
+}
+
+export const ALL_PATTERNS: string[] = RULES.scoreTable.flatMap((t) => t.patterns)
+
+const PATTERN_SYNONYM: Record<string, string> = {
+  平胡: '鸡胡', 屁胡: '鸡胡', 鸡糊: '鸡胡', 鸡和: '鸡胡', 无番: '鸡胡', 普通胡: '鸡胡',
+  对对胡: '碰碰胡', 碰碰和: '碰碰胡',
+  七小对: '七对', 七对子: '七对',
+  清一: '清一色', 混一: '混一色',
+  抢杠: '抢杠胡', 杠开: '杠上开花', 杠上花: '杠上开花', 海底: '海底捞月',
+  豪华七小对: '豪华七对', 双豪华七小对: '双豪华七对', 三豪华七小对: '三豪华七对',
+  混幺: '混幺九', 清幺: '清幺九', 字一: '字一色',
+  十三幺九: '十三幺', 九莲宝灯: '九宝莲灯', 大三元: '大三元', 小三元: '小三元',
+}
+
+export function canonicalPattern(raw: unknown): string | null {
+  const t = String(raw ?? '').trim().replace(/[\s，,。、"'「」：:]/g, '')
+  if (!t) return null
+  if (ALL_PATTERNS.includes(t)) return t
+  if (PATTERN_SYNONYM[t]) return PATTERN_SYNONYM[t]
+  const stripped = t.replace(/[胡和糊]$/, '')
+  if (ALL_PATTERNS.includes(stripped)) return stripped
+  if (PATTERN_SYNONYM[stripped]) return PATTERN_SYNONYM[stripped]
+  const hit = [...ALL_PATTERNS, ...Object.keys(PATTERN_SYNONYM)].sort((a, b) => b.length - a.length)
+    .find((p) => t.includes(p))
+  if (!hit) return null
+  return ALL_PATTERNS.includes(hit) ? hit : PATTERN_SYNONYM[hit]
+}
+
+export function patternTimes(name: string): number {
+  return timesOf(name)
+}
+
 const SPECIAL_NAME: Record<Exclude<SpecialWin, 'none'>, string> = {
   qianggang: '抢杠胡',
   gangkai: '杠上开花',
@@ -43,7 +78,8 @@ function timesOf(name: string): number {
 }
 
 function pickHighest(names: string[]): string {
-  let best = names[0] || '鸡胡'
+  if (!names.length) return ''
+  let best = names[0]
   let bestT = timesOf(best)
   for (const n of names) {
     const t = timesOf(n)
@@ -216,37 +252,39 @@ function suitProfile(tiles: string[], ghost: string | null): { suits: Set<number
   return { suits, honors, yaoOnly, honorOnly }
 }
 
-function windPongs(melds: Meld[], handCounts: Int8Array, jokers: number): { pongs: number, pair: boolean } {
-  // 东风..北风 = 27..30
-  const pong = [false, false, false, false]
+/** 一组目标牌（风/箭）的刻子与对子；鬼只分配一次，不能每门各用一遍 */
+function groupPongs(indices: number[], melds: Meld[], handCounts: Int8Array, jokers: number): { pongs: number, pair: boolean } {
+  const done = new Set<number>()
   for (const m of melds) {
     const i = tileIndex(m.tiles[0] || '')
-    if (i !== null && i >= 27 && i <= 30) pong[i - 27] = true
+    if (i !== null && indices.includes(i)) done.add(i)
   }
+  const need = indices.filter((i) => !done.has(i)).map((i) => handCounts[i])
+  let pongs = done.size
   let pair = false
-  for (let w = 0; w < 4; w++) {
-    if (pong[w]) continue
-    const n = handCounts[27 + w]
-    if (n + jokers >= 3) pong[w] = true
-    else if (n + jokers >= 2) pair = true
+  let j = jokers
+  for (let k = 0; k < need.length; k++) {
+    if (need[k] >= 3) { pongs++; need[k] -= 3 }
   }
-  return { pongs: pong.filter(Boolean).length, pair }
+  for (let k = 0; k < need.length; k++) {
+    if (need[k] >= 2 && j >= 1) { pongs++; need[k] -= 2; j--; }
+    else if (need[k] >= 2) pair = true
+  }
+  for (let k = 0; k < need.length; k++) {
+    if (need[k] >= 1 && j >= 2) { pongs++; need[k]--; j -= 2 }
+    else if (need[k] >= 1 && j >= 1 && !pair) { pair = true; need[k]--; j-- }
+  }
+  while (j >= 3 && pongs < indices.length) { pongs++; j -= 3 }
+  if (!pair && j >= 2 && pongs < indices.length) pair = true
+  return { pongs, pair }
 }
 
-function dragonPongs(melds: Meld[], handCounts: Int8Array, jokers: number): { pongs: number, pair: boolean } {
-  const pong = [false, false, false]
-  for (const m of melds) {
-    const i = tileIndex(m.tiles[0] || '')
-    if (i !== null && i >= 31 && i <= 33) pong[i - 31] = true
-  }
-  let pair = false
-  for (let d = 0; d < 3; d++) {
-    if (pong[d]) continue
-    const n = handCounts[31 + d]
-    if (n + jokers >= 3) pong[d] = true
-    else if (n + jokers >= 2) pair = true
-  }
-  return { pongs: pong.filter(Boolean).length, pair }
+function windPongs(melds: Meld[], handCounts: Int8Array, jokers: number) {
+  return groupPongs([27, 28, 29, 30], melds, handCounts, jokers)
+}
+
+function dragonPongs(melds: Meld[], handCounts: Int8Array, jokers: number) {
+  return groupPongs([31, 32, 33], melds, handCounts, jokers)
 }
 
 function matchesNineBase(counts: Int8Array, jokers: number, suit: number): boolean {
@@ -352,7 +390,7 @@ export function detectPattern(input: PatternInput): PatternResult {
   else if (complete && dragons.pongs === 2 && dragons.pair) names.push('小三元')
 
   if (completeStd && names.length === 0) names.push('鸡胡')
-  if (!complete && names.length === 0) names.push('鸡胡')
+  // 不成胡绝不能标鸡胡：鸡胡必须能拆 4 面子 + 1 对。杂乱牌在「已经胡了」时是十三幺等特殊牌。
 
   const special = input.special && input.special !== 'none' ? SPECIAL_NAME[input.special] : null
   if (special) names.push(special)
@@ -364,4 +402,38 @@ export function detectPattern(input: PatternInput): PatternResult {
     complete,
     hasGhostInHand,
   }
+}
+
+function rank(r: PatternResult): number {
+  if (!r.complete) return -1
+  return timesOf(r.pattern)
+}
+
+/**
+ * 鬼牌未知时：先按无鬼核算，再把手里每张独特牌试当赖子，取成胡且倍数最高的解释。
+ * 无鬼已经成胡时，只有「当鬼后档位更高」（例如鸡胡→大三元）才改判。
+ */
+export function inferWinningPattern(input: PatternInput): InferredPattern {
+  const given = input.ghostTile ? normalizeTileName(input.ghostTile) : null
+  const base = detectPattern(input)
+  if (given) return { ...base, inferredGhost: given }
+
+  const hand = (input.hand || []).map(normalizeTileName).filter((x): x is string => !!x)
+  let best: InferredPattern = { ...base, inferredGhost: null }
+  let bestRank = rank(base)
+
+  const yaoSet = new Set(YAO_13)
+  const unique = [...new Set(hand)]
+  const nonYao = unique.filter((t) => !yaoSet.has(t))
+  const order = [...nonYao, ...unique.filter((t) => yaoSet.has(t))]
+
+  for (const g of order) {
+    const r = detectPattern({ ...input, ghostTile: g })
+    const s = rank(r)
+    if (s > bestRank) {
+      best = { ...r, inferredGhost: g }
+      bestRank = s
+    }
+  }
+  return best
 }

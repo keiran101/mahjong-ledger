@@ -3,7 +3,8 @@
  * node --experimental-strip-types scripts/verify-vision.ts
  */
 import assert from 'node:assert/strict'
-import { detectPattern } from '../lib/pattern.ts'
+import { detectPattern, inferWinningPattern } from '../lib/pattern.ts'
+import { applyPatternGuess } from '../lib/vision.mjs'
 import { relFromRotatedIndex, seatFromRel, normalizeTileName, TILES_34 } from '../lib/tiles.ts'
 import { buildDraft, extractJson } from '../lib/vision.mjs'
 
@@ -75,6 +76,29 @@ console.log('— 牌型判定 —')
 }
 
 {
+  // 十三幺带两张鬼：缺白板，两张 5万当赖子
+  const hand = tiles('1万','9万','1条','9条','1筒','9筒','东风','南风','西风','北风','红中','发财','5万','5万')
+  const face = detectPattern({ hand })
+  assert.equal(face.complete, false)
+  assert.notEqual(face.pattern, '鸡胡')
+  const withGhost = detectPattern({ hand, ghostTile: '5万' })
+  assert.equal(withGhost.complete, true)
+  assert.equal(withGhost.pattern, '十三幺')
+  const inferred = inferWinningPattern({ hand })
+  assert.equal(inferred.complete, true)
+  assert.equal(inferred.pattern, '十三幺')
+  assert.equal(inferred.inferredGhost, '5万')
+}
+
+{
+  // 十三幺带两张鬼：缺北风和白板，1万成对
+  const hand = tiles('1万','1万','9万','1条','9条','1筒','9筒','东风','南风','西风','红中','发财','5万','5万')
+  const inferred = inferWinningPattern({ hand })
+  assert.equal(inferred.pattern, '十三幺')
+  assert.equal(inferred.inferredGhost, '5万')
+}
+
+{
   const r = detectPattern({
     hand: tiles('1万','1万','1万','2万','3万','4万','5万','6万','7万','8万','9万','9万','9万','5万'),
   })
@@ -100,6 +124,20 @@ console.log('— 牌型判定 —')
     ],
   })
   assert.ok(r.candidates.includes('大三元'), r.candidates.join(','))
+}
+
+{
+  // 带鬼大三元：白板差一张，5万当赖子。面值乍看不成胡
+  const hand = tiles('红中','红中','红中','发财','发财','发财','白板','白板','5万','2万','2万','3万','3万','3万')
+  const face = detectPattern({ hand })
+  assert.equal(face.complete, false)
+  const withGhost = detectPattern({ hand, ghostTile: '5万' })
+  assert.equal(withGhost.complete, true)
+  assert.equal(withGhost.pattern, '大三元')
+  const inferred = inferWinningPattern({ hand })
+  assert.equal(inferred.complete, true)
+  assert.equal(inferred.pattern, '大三元')
+  assert.equal(inferred.inferredGhost, '5万')
 }
 
 {
@@ -176,6 +214,32 @@ console.log('— VLM JSON 收成草稿（不算分） —')
     horses: ['1万'],
   }, { photographer: 'E' })
   assert.ok(d.warnings.some((w) => /1万/.test(w) && /出现了/.test(w)))
+}
+
+{
+  const d = buildDraft({
+    hand: ['红中','红中','红中','发财','发财','发财','白板','白板','5万','2万','2万','3万','3万','3万'],
+    melds: [],
+    horses: [],
+  }, { photographer: 'E' })
+  assert.equal(d.pattern, '大三元', '规则核算应把 5万 当鬼预选大三元')
+  assert.equal(d.ghostTile, '5万')
+  applyPatternGuess(d, { pattern: '大三元', ghostTile: '5万', hasGhost: true, reason: '5万当赖子补白板' })
+  assert.equal(d.pattern, '大三元')
+  assert.match(d.patternReason, /LLM 核算/)
+}
+
+{
+  const d = buildDraft({
+    hand: ['1万','9万','1条','9条','1筒','9筒','东风','南风','西风','北风','红中','发财','5万','5万'],
+    melds: [],
+    horses: [],
+  }, { photographer: 'E' })
+  assert.equal(d.pattern, '十三幺')
+  assert.equal(d.ghostTile, '5万')
+  applyPatternGuess(d, { pattern: '鸡胡', hasGhost: false, reason: '手牌14张杂乱，无对子无顺子无刻子' })
+  assert.equal(d.pattern, '十三幺', 'LLM 报鸡胡不得压过十三幺')
+  assert.equal(d.hasGhost, true)
 }
 
 console.log('\n拍照认牌通道验证通过：归一化、横牌映射、牌型、草稿不含分数')

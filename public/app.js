@@ -977,7 +977,8 @@ function renderVisionForm() {
       ${specialHtml}
     </div>
     <div class="vision-block">
-      <div class="section-title"><span>7 · 胡法档位</span><span class="vision-reason">由牌面建议，请再核对</span></div>
+      <div class="section-title"><span>7 · 胡法档位</span><span class="vision-reason">读牌后再核算，已预选</span></div>
+      ${d?.patternReason ? `<div class="parse-line">${escHtml(d.patternReason)}</div>` : ''}
       <div class="pattern-groups">${patternHtml}</div>
     </div>`
 
