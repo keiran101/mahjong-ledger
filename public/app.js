@@ -266,6 +266,54 @@ function bindDetailClicks(rootSel) {
   })
 }
 
+/** v1.10c 录入还原：把账本冻结的 input 还原成「记分页当时怎么选、怎么填」。
+ *  口径与记分页 1-6 步一一对应；炸胡局不摸马；老数据缺字段时逐项兜底隐藏。 */
+function entryReplayHtml(inp, d) {
+  const isZhaHu = inp.kind === 'zhaHu' || !!inp.zhaHuSeat
+  const dealer = SEATS.includes(inp.dealer) ? inp.dealer : (S.data?.dealer || 'E')
+  const hasGhost = inp.hasGhost !== false
+  const seatChip = (s) => `<span class="replay-chip strong">${SN[s]}家${s === dealer ? '（庄）' : ''} · ${escHtml(seatLabel(s))}</span>`
+  const step = (no, label, val) =>
+    `<div class="replay-step"><span class="replay-no">${no}</span><span class="replay-label">${label}</span><span class="replay-val">${val}</span></div>`
+
+  // 摸马还原：逐张「牌面 → 座位」，自马高亮；没填的下拉在记分页即「未中」
+  const hits = Array.isArray(d?.horseHits) ? d.horseHits : []
+  const horseChips = (inp.horses || []).map((t) => {
+    const h = hits.find((x) => x.tile === t)
+    const who = h ? seatLabel(h.seat) : '—'
+    const cls = h?.winnerSelf ? ' self' : ''
+    return `<span class="replay-chip tile${cls}">${escHtml(t)} → ${SN[h?.seat] || ''} ${escHtml(who)}${h?.winnerSelf ? '（本人·计倍）' : ''}</span>`
+  }).join('')
+
+  const gangText = (inp.gangEvents || []).map((g) => {
+    const who = seatLabel(g.by)
+    if (g.type === 'dian') return `<span class="replay-chip">放杠 · ${escHtml(seatLabel(g.from))} 放 → ${escHtml(who)} 收</span>`
+    return `<span class="replay-chip">${g.type === 'bu' ? '加杠' : '暗杠'} · ${escHtml(who)}</span>`
+  }).join('') || '<span class="replay-none">未选</span>'
+
+  const ghostText = (inp.ghostEvents || []).map((g) =>
+    `<span class="replay-chip">打鬼 · ${escHtml(seatLabel(g.by))}</span>`).join('') || '<span class="replay-none">未选</span>'
+
+  const horseVal = isZhaHu
+    ? '<span class="replay-none">炸胡局没有赢家，不摸马</span>'
+    : (inp.horses || []).length
+      ? `摸 ${d?.horseCount ?? (hasGhost ? 4 : 6)} 张，填 ${inp.horses.length} 张，未填按「未中」计<br>${horseChips}`
+      : '<span class="replay-none">全部未填（按未中计，无自马加成）</span>'
+
+  const step1 = isZhaHu
+    ? step(1, '炸胡开关', '<span class="replay-chip warn">炸胡（诈胡）已开</span>')
+    : step(1, '谁胡了', seatChip(inp.winner))
+  return `<div class="replay" aria-label="当局录入还原">
+    <div class="replay-title">当局录入还原<span class="muted small">按记分页当时的选择与填写还原（账本冻结快照）</span></div>
+    ${step1}
+    ${step(2, '报胡型', `<span class="replay-chip strong">${escHtml(inp.pattern || '—')}</span>`)}
+    ${step(3, '有无鬼牌', `<span class="replay-chip">${hasGhost ? '有鬼' : '硬胡（无鬼 ×2）'}</span>`)}
+    ${step(4, '摸马', horseVal)}
+    ${step(5, '本局杠分', gangText)}
+    ${step(6, '打鬼罚分', ghostText)}
+  </div>`
+}
+
 /** 只读对局明细：账本事件 payload 里冻结的 input + detail，外加手改/作废状态 */
 function openDetail(id) {
   const e = S.data?.events?.find((x) => x.id === id)
@@ -280,6 +328,11 @@ function openDetail(id) {
   ].filter(Boolean).join(' ')
   let html = `<p class="muted small">${fmtTime(e.createdAt)} · ${e.author || '—'} 记 ${badges}</p>`
   if (e.isVoided) html += `<p class="muted small">此局已作废，分数未计入总分。</p>`
+  // v1.10c 录入还原：payload 里有 input 快照就还原记分页当时的填法，再跟算分明细
+  if (inp && (inp.winner || inp.zhaHuSeat || inp.pattern)) {
+    html += entryReplayHtml(inp, d)
+    html += `<div class="section-title"><span>算分明细</span></div>`
+  }
   if (d.tierName || inp.pattern) {
     const isZhaHu = d.kind === 'zhaHu' || !!inp.zhaHuSeat || !!d.zhaHuSeat
     const selfTimes = d.selfHorseTimes ?? 1
@@ -342,11 +395,44 @@ function renderBoard(d) {
       } catch (e) { toast(e.message) }
     }
   })
-  const recent = d.events.filter((e) => e.type === 'score' && !e.isVoided).slice(0, 5)
-  $('#recent-list').innerHTML = recent.length
-    ? recent.map((e) => recordHtml(e, true)).join('')
-    : `<div class="empty"><span class="empty-title">还没有记录</span>这桌刚开，记完第一局这里会列出每局明细。<br><button class="btn btn-outline" type="button" data-goto-score>去记第一局</button></div>`
-  bindDetailClicks('#recent-list')
+  renderRoomRules(d)
+}
+
+/** v1.10 房间规则开关：按服务端下发的 switches 定义渲染（加新挡位开关自动出现），改后落库并刷新 */
+function renderRoomRules(d) {
+  const box = $('#room-rules')
+  if (!box) return
+  const switches = S.rules?.switches || []
+  if (!switches.length) {
+    box.innerHTML = '<p class="muted small">本桌无可选规则项。</p>'
+    return
+  }
+  box.innerHTML = switches.map((def) => {
+    const cur = d.settings?.[def.key]
+    return `<div class="rule-switch">
+      <div class="rule-switch-head"><b>${escHtml(def.label)}</b><span class="muted small">${escHtml(def.description)}</span></div>
+      <div class="seg" role="group" aria-label="${escHtml(def.label)}">
+        ${def.options.map((o) => `<button type="button" data-rs="${def.key}" data-rsv="${o.value}" title="${escHtml(o.hint)}"
+          class="${o.value === cur ? 'active' : ''}" aria-pressed="${o.value === cur}">${escHtml(o.label)}</button>`).join('')}
+      </div>
+    </div>`
+  }).join('')
+  $$('#room-rules [data-rs]').forEach((b) => {
+    b.onclick = async () => {
+      const key = b.dataset.rs
+      if ((d.settings?.[key] ?? '') === b.dataset.rsv) return // 当前值，不重复提交
+      try {
+        await api(`/api/rooms/${S.code}/settings`, { [key]: b.dataset.rsv })
+        await loadData()
+        const def = switches.find((x) => x.key === key)
+        const opt = def?.options.find((o) => o.value === b.dataset.rsv)
+        toast(`已切换：${def?.label || key} = ${opt?.label || b.dataset.rsv}，此后各局生效`)
+      } catch (e) {
+        toast(e.message)
+        await loadData() // 失败回显真实状态
+      }
+    }
+  })
 }
 
 /* ---------- 记分表单 ---------- */
@@ -650,7 +736,7 @@ function buildSettleText(d) {
 }
 
 function renderSettle(d) {
-  $('#settle-net').innerHTML = scoreCells(d.net, d.dealer)
+  // 净分只在看板展示（不重复）；结算页只负责「怎么转钱」
   $('#settle-transfers').innerHTML = d.settlement.length
     ? d.settlement.map((t) =>
       `<div class="transfer"><div class="who">${seatLabel(t.from)} <span class="muted">→</span> ${seatLabel(t.to)}</div><div class="amt">${t.amount} 元</div></div>`).join('')
@@ -675,33 +761,97 @@ function renderStats(d) {
     `<tr><td>${seatLabel(s)}</td><td>${st.wins[s]}</td><td>${st.winRate[s]}%</td><td>${fmt(d.net[s])}</td></tr>`).join('')}</table>`
 
   const trend = st.trend
+  $('#stats-chart-sub').textContent = trend.length ? `${trend.length} 局累计` : ''
   if (!trend.length) {
     $('#stats-chart').innerHTML = `<div class="empty"><span class="empty-title">还没有走势</span>记满一局后这里会出现四家分数曲线。</div>`
     return
   }
-  const W = 340, H = 180, pad = 26
+  $('#stats-chart').innerHTML = buildTrendSvg(st.trend) + buildTrendLegend()
+}
+
+/** v1.10e 分数走势（美化版 SVG，零依赖）。
+ *  标注原则：不换行、不占额外行——图例一行胶囊、终值贴端点右侧自动让位、x 轴只标局号。 */
+function buildTrendSvg(trend) {
+  const W = 680, H = 280
+  const padL = 46, padR = 46, padT = 18, padB = 28
+  const n = trend.length
   const all = trend.flatMap((t) => SEATS.map((s) => t[s]))
   let min = Math.min(0, ...all), max = Math.max(0, ...all)
   if (max === min) max = min + 10
-  const m = (max - min) * 0.1
+  const m = (max - min) * 0.12
   min -= m; max += m
-  const x = (i) => pad + (trend.length === 1 ? (W - 2 * pad) / 2 : i * (W - 2 * pad) / (trend.length - 1))
-  const y = (v) => H - pad - (v - min) * (H - 2 * pad) / (max - min)
-  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet">`
-  svg += `<line x1="${pad}" y1="${y(0)}" x2="${W - pad}" y2="${y(0)}" stroke="#ddd" stroke-dasharray="3 3"/>`
+  const x = (i) => padL + (n === 1 ? (W - padL - padR) / 2 : i * (W - padL - padR) / (n - 1))
+  const y = (v) => padT + (max - v) * (H - padT - padB) / (max - min)
+  const INK_MUTED = '#777068', GRID = '#e3ddd0', GRID_STRONG = '#cfc6b4'
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="四家累计分数走势">`
+  svg += '<defs>'
   SEATS.forEach((s) => {
-    const pts = trend.map((t, i) => `${x(i)},${y(t[s])}`).join(' ')
-    svg += `<polyline points="${pts}" fill="none" stroke="${COLORS[s]}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+    svg += `<linearGradient id="grad-${s}" x1="0" y1="0" x2="0" y2="1">`
+    svg += `<stop offset="0" stop-color="${COLORS[s]}" stop-opacity="0.18"/>`
+    svg += `<stop offset="1" stop-color="${COLORS[s]}" stop-opacity="0"/>`
+    svg += '</linearGradient>'
   })
+  svg += '</defs>'
+
+  // 横向网格 + y 轴刻度（5 条）；零线加粗虚线强调
+  // 文字坐标一律取整（半像素坐标会让 Windows 字形发虚），字号 ≥11px
+  for (let g = 0; g <= 4; g++) {
+    const v = min + (max - min) * g / 4
+    const isZero = Math.abs(v) < (max - min) / 40
+    svg += `<line x1="${padL}" y1="${y(v)}" x2="${W - padR}" y2="${y(v)}" stroke="${isZero ? GRID_STRONG : GRID}" stroke-width="${isZero ? 1.5 : 1}"${isZero ? ' stroke-dasharray="4 3"' : ''}/>`
+    svg += `<text x="${padL - 8}" y="${Math.round(y(v)) + 4}" text-anchor="end" font-size="11" fill="${INK_MUTED}" style="font-variant-numeric:tabular-nums">${Math.round(v)}</text>`
+  }
+
+  // 每家：面积（渐变填到零线）→ 折线 → 中途点
+  const linePtsOf = {}
+  SEATS.forEach((s) => {
+    const pts = trend.map((t, i) => [x(i), y(t[s])])
+    linePtsOf[s] = pts
+    const linePts = pts.map((p) => p.map((v) => +v.toFixed(1)).join(','))
+    const y0 = y(0).toFixed(1)
+    svg += `<path d="M ${pts[0][0].toFixed(1)},${y0} L ${linePts.join(' L ')} L ${pts[n - 1][0].toFixed(1)},${y0} Z" fill="url(#grad-${s})" stroke="none"/>`
+    svg += `<polyline points="${linePts.join(' ')}" fill="none" stroke="${COLORS[s]}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`
+    if (n <= 15) pts.forEach((p) => {
+      svg += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3" fill="${COLORS[s]}" stroke="#fffdf8" stroke-width="1.2"/>`
+    })
+  })
+
+  // 终值标注：全部贴在端点右侧、垂直居中；重叠时按序自动让位（固定最小间距，不上下乱跳）
+  const ex = x(n - 1)
+  const ends = SEATS.map((s) => ({ s, y: y(trend[n - 1][s]) })).sort((a, b) => a.y - b.y)
+  for (let i = 1; i < ends.length; i++) {
+    if (ends[i].y - ends[i - 1].y < 16) ends[i].y = ends[i - 1].y + 16
+  }
+  const labelY = Object.fromEntries(ends.map((e) => [e.s, e.y]))
+  SEATS.forEach((s) => {
+    const ey = y(trend[n - 1][s])
+    svg += `<circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="4.5" fill="${COLORS[s]}" stroke="#fffdf8" stroke-width="2"/>`
+    svg += `<text x="${Math.round(ex + 9)}" y="${Math.round(labelY[s])}" dy=".35em" font-size="12" fill="${COLORS[s]}" style="font-variant-numeric:tabular-nums">${fmt(trend[n - 1][s])}</text>`
+  })
+
+  // x 轴：只标局号数字，稀疏标注，始终含最后一局
   trend.forEach((t, i) => {
-    if (trend.length <= 8 || i % Math.ceil(trend.length / 6) === 0 || i === trend.length - 1) {
-      svg += `<text x="${x(i)}" y="${H - 6}" font-size="9" fill="#999" text-anchor="middle">${t.round}</text>`
+    if (n <= 8 || i % Math.ceil(n / 6) === 0 || i === n - 1) {
+      svg += `<text x="${Math.round(x(i))}" y="${H - 9}" font-size="11" fill="${INK_MUTED}" text-anchor="middle" style="font-variant-numeric:tabular-nums">${t.round}</text>`
     }
   })
   svg += '</svg>'
-  svg += `<div class="legend">${SEATS.map((s) => `<span><i style="background:${COLORS[s]}"></i>${SN[s]}家</span>`).join('')}</div>`
-  if (trend.length === 1) svg += `<div class="state-note">目前只有 1 局数据，显示为单点；继续记分后连成曲线。</div>`
-  $('#stats-chart').innerHTML = svg
+  if (n === 1) svg += `<div class="state-note">目前只有 1 局数据，显示为单点；继续记分后连成曲线。</div>`
+  return svg
+}
+
+/** 图例文字：昵称与默认座位名相同时不重复显示，胶囊保持一行 */
+function legendLabel(s) {
+  const nick = S.data?.players?.[s]?.nickname?.trim()
+  const def = `${SN[s]}家`
+  return nick && nick !== def ? `${SN[s]} · ${nick}` : def
+}
+
+/** 走势图例：座位色胶囊，单行不换行 */
+function buildTrendLegend() {
+  return `<div class="legend">${SEATS.map((s) =>
+    `<span class="legend-pill"><i style="background:${COLORS[s]}"></i>${escHtml(legendLabel(s))}</span>`).join('')}</div>`
 }
 
 /* ---------- 语音 / LLM 记分 ---------- */

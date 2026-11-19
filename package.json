@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node --experimental-sqlite --experimental-strip-types server.mjs",
     "verify": "node --experimental-strip-types scripts/verify.ts",
+    "verify:settings": "node --experimental-sqlite --experimental-strip-types scripts/verify-settings.ts",
     "verify:vision": "node --experimental-strip-types scripts/verify-vision.ts",
     "verify:store": "node --experimental-sqlite --experimental-strip-types scripts/verify-store.ts"
   },

@@ -121,9 +121,9 @@
             <div id="dealer-group" class="seg"></div>
           </section>
 
-          <section class="board-recent" aria-labelledby="recent-title">
-            <div class="section-title"><span id="recent-title">最近记录</span></div>
-            <div id="recent-list" class="record-list"></div>
+          <section class="card compact" aria-labelledby="rules-title">
+            <div class="section-title"><span id="rules-title">房间规则</span><span class="muted small">对此后各局生效</span></div>
+            <div id="room-rules"></div>
           </section>
         </div>
 
@@ -213,9 +213,7 @@
 
       <!-- 结算 -->
       <div id="panel-settle" class="panel hidden" role="tabpanel" aria-labelledby="tab-settle">
-        <div class="section-title"><span>最终净分</span></div>
-        <div id="settle-net" class="score-board" role="group" aria-label="四家最终净分"></div>
-        <div class="section-title"><span>最少转账方案</span></div>
+        <div class="section-title"><span>最少转账方案</span><span class="muted small">净分见「看板」</span></div>
         <div id="settle-transfers"></div>
         <button id="btn-copy-settle" class="btn btn-primary btn-block" type="button">复制结算文本</button>
         <div class="card compact">
@@ -226,16 +224,16 @@
 
       <!-- 统计 -->
       <div id="panel-stats" class="panel hidden" role="tabpanel" aria-labelledby="tab-stats">
+        <div class="section-title"><span>分数走势</span><span class="muted small" id="stats-chart-sub"></span></div>
+        <div id="stats-chart" class="chart chart-hero"></div>
         <div class="stats-grid">
           <div>
             <div class="section-title"><span>排行榜</span></div>
             <div id="stats-ranking"></div>
-            <div class="section-title"><span>明细</span></div>
-            <div id="stats-table"></div>
           </div>
           <div>
-            <div class="section-title"><span>分数走势</span></div>
-            <div id="stats-chart" class="chart"></div>
+            <div class="section-title"><span>明细</span></div>
+            <div id="stats-table"></div>
           </div>
         </div>
       </div>

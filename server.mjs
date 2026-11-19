@@ -10,9 +10,10 @@ import { fileURLToPath } from 'node:url'
 import { RULES, SEATS } from './lib/rules.ts'
 import { scoreRound } from './lib/score.ts'
 import {
-  createRoom, roomExists, fullState, getRoomMeta, setPlayerName, setDealer,
+  createRoom, roomExists, fullState, getRoomMeta, setPlayerName, setDealer, setRoomSettings,
   appendScore, correctEvent, voidEvent,
 } from './lib/store.mjs'
+import { applySettings, SWITCH_DEFS } from './lib/settings.ts'
 import { getConfig, saveConfig, testConnection } from './lib/llm.mjs'
 import { parseRound } from './lib/parse.mjs'
 import { getVlmConfig, saveVlmConfig } from './lib/vlm.mjs'
@@ -74,9 +75,17 @@ function ruleMeta() {
     // 摸马张数随有无鬼变：有鬼 4 张、没鬼（硬胡）6 张
     horseCount: RULES.horse.countByGhost,
     unitPrice: RULES.unitPrice,
+    switches: SWITCH_DEFS, // v1.10 看板规则开关定义（前端按它渲染，加挡位自动出现）
     seats: SEATS,
     patterns: patterns(),
   }
+}
+
+/** v1.10：本房间生效规则 = 全局 RULES + 房间设置（自马算术等开关）。所有算分入口统一走这里。 */
+function roomRules(code) {
+  const meta = getRoomMeta(code)
+  if (!meta) throw new Error('房间不存在')
+  return applySettings(RULES, meta.settings)
 }
 
 /** 校验并规范化记分输入，服务端始终用房间当前庄家，不信任前端传入。
@@ -141,7 +150,7 @@ async function handleApi(req, res, pathname) {
   // 创建房间
   if (pathname === '/api/rooms' && method === 'POST') {
     const b = await readBody(req)
-    const code = createRoom({ name: b.name, nicknames: b.nicknames })
+    const code = createRoom({ name: b.name, nicknames: b.nicknames, settings: b.settings })
     return send(res, 200, { code, ...fullState(code) })
   }
 
@@ -163,6 +172,13 @@ async function handleApi(req, res, pathname) {
     if (tail[0] === 'dealer' && method === 'POST') {
       const b = await readBody(req)
       setDealer(code, b.dealer)
+      return send(res, 200, fullState(code))
+    }
+
+    // v1.10 房间规则开关：看板可改（自马算术等），改后立即对此后各局生效
+    if (tail[0] === 'settings' && method === 'POST') {
+      const b = await readBody(req)
+      setRoomSettings(code, b)
       return send(res, 200, fullState(code))
     }
 
@@ -195,7 +211,7 @@ async function handleApi(req, res, pathname) {
       const state = fullState(code)
       const parsed = await parseRound(text, { dealer: state.dealer, players: state.players })
       const input = normalizeInput(code, parsed.input)
-      const detail = scoreRound(input)
+      const detail = scoreRound(input, roomRules(code))
       return send(res, 200, {
         mode: parsed.mode, notes: parsed.notes, warnings: parsed.warnings,
         input, detail,
@@ -206,7 +222,7 @@ async function handleApi(req, res, pathname) {
     if (tail[0] === 'preview' && method === 'POST') {
       const b = await readBody(req)
       const input = normalizeInput(code, b)
-      const detail = scoreRound(input)
+      const detail = scoreRound(input, roomRules(code))
       return send(res, 200, { detail, input })
     }
 
@@ -214,7 +230,7 @@ async function handleApi(req, res, pathname) {
     if (tail[0] === 'events' && !tail[1] && method === 'POST') {
       const b = await readBody(req)
       const input = normalizeInput(code, b)
-      const detail = scoreRound(input)
+      const detail = scoreRound(input, roomRules(code))
       let net = detail.perPlayer
       if (b.manualOverride && Object.keys(b.manualOverride).length) {
         const clean = {}

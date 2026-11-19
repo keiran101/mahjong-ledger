@@ -106,6 +106,12 @@ svg circle{fill:currentColor;stroke:none}
 .seg button{flex:1 1 0;min-width:0;min-height:var(--tap);padding:0 4px;border:1px solid var(--line-strong);border-radius:10px;background:#fff;color:var(--ink);font-weight:600;font-size:13px;white-space:nowrap;transition:background-color .15s ease,color .15s ease}
 .seg button.active{background:var(--felt);color:#fff;border-color:var(--felt)}
 
+/* v1.10 看板 · 房间规则开关卡片 */
+.rule-switch{margin-top:10px}
+.rule-switch:first-child{margin-top:2px}
+.rule-switch-head{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}
+.rule-switch-head b{font-size:14px}
+
 /* ---------- 主界面骨架 ---------- */
 .topbar{background:var(--felt-deep);color:var(--on-felt);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 .topbar-id{min-width:0;flex:1}
@@ -224,9 +230,14 @@ table{width:100%;border-collapse:collapse;background:var(--card);border:1px soli
 th,td{padding:9px 6px;text-align:center;border-bottom:1px solid var(--line)}
 th{background:#f1ece0;color:var(--muted);font-size:11px;font-weight:600}
 tr:last-child td{border-bottom:none}
-.chart{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;overflow-x:auto}
-.legend{display:flex;gap:12px;justify-content:center;font-size:11px;color:var(--muted);margin-top:6px}
-.legend i{display:inline-block;width:10px;height:3px;vertical-align:middle;margin-right:4px;border-radius:2px}
+.chart{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;overflow-x:auto}
+.chart-hero{margin-top:12px;box-shadow:0 1px 4px rgba(18,49,41,.06)}
+/* 只缩小不放大：超过原始尺寸居中，避免拉伸发糊；数字用 Tahoma（Windows 小字号最锐利，不用雅黑） */
+.chart svg{max-width:680px;display:block;margin:0 auto}
+.chart text{font-family:Tahoma,Verdana,"Segoe UI",sans-serif;font-weight:400}
+.legend{display:flex;gap:8px;flex-wrap:nowrap;justify-content:center;font-size:12px;color:var(--muted);margin-top:10px;overflow-x:auto;white-space:nowrap}
+.legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:5px;border-radius:2px}
+.legend-pill{display:inline-flex;align-items:center;padding:3px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card)}
 
 /* ---------- 底部标签（移动） ---------- */
 #tabbar{position:fixed;bottom:0;left:0;right:0;max-width:var(--app-max);margin:0 auto;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);z-index:10}
@@ -243,6 +254,20 @@ tr:last-child td{border-bottom:none}
 .detail .kv{display:flex;justify-content:space-between;gap:10px}
 .detail .kv span:first-child{color:var(--muted)}
 .detail .hl{color:var(--felt);font-weight:700}
+
+/* v1.10c 明细弹窗 · 当局录入还原（还原记分页 1-6 步的填法） */
+.replay{border:1px solid var(--line-strong);border-radius:12px;padding:12px 14px;margin-top:12px;background:var(--paper)}
+.replay-title{font-weight:800;font-size:14px;display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.replay-step{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line)}
+.replay-step:last-child{border-bottom:none;padding-bottom:0}
+.replay-no{flex:none;width:20px;height:20px;margin-top:2px;border-radius:50%;background:var(--felt);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.replay-label{flex:none;width:72px;color:var(--muted);font-size:13px;line-height:24px}
+.replay-val{flex:1;min-width:0;font-size:13px;line-height:1.7;word-break:break-word}
+.replay-chip{display:inline-block;padding:2px 9px;margin:2px 6px 2px 0;border:1px solid var(--line-strong);border-radius:9px;background:var(--card);font-size:12px;white-space:nowrap}
+.replay-chip.strong{background:var(--felt);border-color:var(--felt);color:#fff;font-weight:700}
+.replay-chip.warn{background:#fff;border-color:var(--danger);color:var(--danger);font-weight:700}
+.replay-chip.tile.self{background:var(--felt);border-color:var(--felt);color:#fff;font-weight:700}
+.replay-none{color:var(--muted)}
 .net-edit{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 .net-edit label{background:var(--card);border:1px solid var(--line-strong);border-radius:10px;padding:8px 10px;display:flex;align-items:center;gap:8px;min-width:0}
 .net-edit label span{font-size:12px;color:var(--muted);width:48px;flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -319,7 +344,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
   .score-board{grid-template-columns:repeat(4,1fr);gap:8px;padding:8px}
   .score-cell{padding:14px 16px 12px}
   .score-cell .val{font-size:36px}
-  .board-lower{display:grid;grid-template-columns:minmax(260px,.8fr) minmax(0,1.2fr);gap:20px;align-items:start}
+  .board-lower{display:grid;grid-template-columns:minmax(260px,.7fr) minmax(0,1fr);gap:20px;align-items:start}
   .board-lower .card.compact{margin-top:0}
   .board-lower .section-title:first-child{margin-top:0}
   #btn-goto-score{max-width:320px;margin-left:auto;margin-right:0}
@@ -332,7 +357,6 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
   .modal-box{max-width:560px;border-radius:18px;margin-bottom:5vh;padding:22px 24px}
   .vision-box{max-width:640px}
   .modal{align-items:center}
-  #settle-net{grid-template-columns:repeat(4,1fr)}
   .toast{bottom:32px}
 }
 
