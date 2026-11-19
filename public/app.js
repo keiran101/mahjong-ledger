@@ -185,6 +185,7 @@ async function enterMain() {
   S.timer = setInterval(() => {
     if (!$('#preview-modal').classList.contains('hidden')) return
     if (!$('#edit-modal').classList.contains('hidden')) return
+    if (!$('#detail-modal').classList.contains('hidden')) return
     if (!$('#llm-modal').classList.contains('hidden')) return
     if (!$('#vision-modal').classList.contains('hidden')) return
     if (!$('#vision-pick-modal').classList.contains('hidden')) return
@@ -240,7 +241,7 @@ function recordHtml(e, compact) {
     const v = Number(net[s]) || 0
     return `<span class="${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}">${SN[s]} ${fmt(v)}</span>`
   }).join('')
-  return `<div class="record ${e.isVoided ? 'voided' : ''}">
+  return `<div class="record ${e.isVoided ? 'voided' : ''}" data-detail="${e.id}" role="button" tabindex="0" aria-label="查看第 ${e.roundNo} 局明细">
     <div class="r-top"><span>第 ${e.roundNo} 局 · ${fmtTime(e.createdAt)}</span><span>${e.author || '—'} 记</span></div>
     <div class="r-main">${seatLabel(inp.winner)} ${inp.pattern || '胡牌'} ${inp.hasGhost ? '有鬼' : '硬胡'}
       ${e.isCorrected ? '<span class="badge manual">已手改</span>' : ''}
@@ -250,6 +251,64 @@ function recordHtml(e, compact) {
       <button data-edit="${e.id}">手改</button>
       <button class="danger" data-void="${e.id}">作废</button></div>`}
   </div>`
+}
+
+/** 绑定记录卡片点击 → 打开明细弹层（按钮点击不触发） */
+function bindDetailClicks(rootSel) {
+  $$(rootSel + ' [data-detail]').forEach((el) => {
+    const open = () => openDetail(Number(el.dataset.detail))
+    el.onclick = (ev) => { if (!ev.target.closest('button')) open() }
+    el.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open() } }
+  })
+}
+
+/** 只读对局明细：账本事件 payload 里冻结的 input + detail，外加手改/作废状态 */
+function openDetail(id) {
+  const e = S.data?.events?.find((x) => x.id === id)
+  if (!e) return
+  const inp = e.payload?.input || {}
+  const d = e.payload?.detail || {}
+  const net = e.net || {}
+  $('#detail-title').textContent = `第 ${e.roundNo} 局明细`
+  const badges = [
+    e.isCorrected ? '<span class="badge manual">已手改</span>' : '',
+    e.isVoided ? '<span class="badge">已作废</span>' : '',
+  ].filter(Boolean).join(' ')
+  let html = `<p class="muted small">${fmtTime(e.createdAt)} · ${e.author || '—'} 记 ${badges}</p>`
+  if (e.isVoided) html += `<p class="muted small">此局已作废，分数未计入总分。</p>`
+  if (d.tierName || inp.pattern) {
+    const selfTimes = d.selfHorseTimes ?? 1
+    const timesLabel = selfTimes > 1 ? `（自己的马 ${d.ownHorseCount ?? 0} 张 → 胡分 ×${selfTimes}）` : ''
+    html += kv('胡法', `<b>${d.tierName || inp.pattern}</b>（${d.hasGhost ?? inp.hasGhost ? '有鬼' : '硬胡'}）`)
+    if (d.base != null) html += kv('档位基数', `<b class="hl">${d.base} 分</b>${timesLabel}`)
+    if (d.zimoPerLoser != null) html += kv('三家各付', `${d.zimoPerLoser} 分，赢家收 ${d.zimoPerLoser * 3} 分`)
+    if (d.horseCount != null) {
+      const horse = (d.horseHits || []).length
+        ? d.horseHits.map((h) => `${h.tile}→${seatLabel(h.seat)}${h.winnerSelf ? '(本人,计翻倍)' : '(不计)'}`).join('、')
+        : '无'
+      html += kv(`摸马 ${d.horseCount} 张`, horse)
+    }
+    if ((d.gangLines || []).length) html += kv('杠分', d.gangLines.join('；'))
+    if (e.isCorrected) {
+      const orig = d.perPlayer || {}
+      const origRow = SEATS.map((s) => `${SN[s]} ${fmt(Number(orig[s]) || 0)}`).join(' / ')
+      html += kv('原算净分', origRow)
+    }
+    const netRow = SEATS.map((s) => {
+      const v = Number(net[s]) || 0
+      return `<span class="${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}">${SN[s]} ${fmt(v)}</span>`
+    }).join(' / ')
+    html += kv(e.isCorrected ? '手改后净分' : '四家净分', netRow)
+  } else {
+    // 兜底：极老数据没有 detail，只展示净分
+    const netRow = SEATS.map((s) => {
+      const v = Number(net[s]) || 0
+      return `<span class="${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}">${SN[s]} ${fmt(v)}</span>`
+    }).join(' / ')
+    html += kv('四家净分', netRow)
+  }
+  $('#detail-body').innerHTML = html
+  $('#detail-modal').classList.remove('hidden')
 }
 
 function renderBoard(d) {
@@ -272,6 +331,7 @@ function renderBoard(d) {
   $('#recent-list').innerHTML = recent.length
     ? recent.map((e) => recordHtml(e, true)).join('')
     : `<div class="empty"><span class="empty-title">还没有记录</span>这桌刚开，记完第一局这里会列出每局明细。<br><button class="btn btn-outline" type="button" data-goto-score>去记第一局</button></div>`
+  bindDetailClicks('#recent-list')
 }
 
 /* ---------- 记分表单 ---------- */
@@ -492,6 +552,7 @@ function renderRecords(d) {
       } catch (e) { toast(e.message) }
     }
   })
+  bindDetailClicks('#records-list')
 }
 
 function openEdit(id) {
@@ -1219,6 +1280,7 @@ function bind() {
   }
   $('#btn-confirm').onclick = confirmScore
   $('#btn-edit-cancel').onclick = () => $('#edit-modal').classList.add('hidden')
+  $('#btn-detail-close').onclick = () => $('#detail-modal').classList.add('hidden')
   $('#btn-edit-save').onclick = saveEdit
   $('#btn-copy-link').onclick = () => copyText(location.href)
   $('#btn-copy-settle').onclick = () => copyText($('#settle-card').textContent)

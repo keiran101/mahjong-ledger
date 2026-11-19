@@ -183,7 +183,9 @@ svg circle{fill:currentColor;stroke:none}
 
 /* ---------- 记录 ---------- */
 .record-list{display:flex;flex-direction:column;gap:8px}
-.record{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--line-strong);border-radius:10px;padding:9px 12px}
+.record{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--line-strong);border-radius:10px;padding:9px 12px;cursor:pointer;transition:border-color .12s}
+.record:hover{border-color:var(--line-strong)}
+.record:focus-visible{outline:2px solid var(--line-strong);outline-offset:2px}
 .record.voided{opacity:.5;border-left-color:var(--muted)}
 .record .r-top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}
 .record .r-main{font-weight:700;margin:4px 0 6px}
