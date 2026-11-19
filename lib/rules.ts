@@ -3,15 +3,18 @@
  * 来源：用户提供的规则图 + 口头确认
  * 改规则只改本文件，不动 score.ts。
  *
- * 关键口径（v1.5：摸马只认赢家自己的马）：
+ * 关键口径（v1.8：自马翻倍算术三选一开关；v1.5 的线性 ×N 已废弃）：
  * - 底分 = 2 分。鸡胡有鬼 = 1 倍底分 = 2 分，即「鸡胡就是底分 2」
  * - 表格各档 = 底分 × 倍数（1/2/4/6/8/10/12）；硬胡(无鬼) = 有鬼 ×2
  * - 无点炮：所有胡牌都是自摸（或抢杠胡），三家各付 1 份，赢家收 3 份
  * - 用户直接报胡法档位，系统不识别牌型、不判定叠加
  * - 摸马（非买马）：胡牌后按有无鬼摸固定张数 —— 有鬼摸 4 张、没鬼（硬胡）摸 6 张；
  *   马牌按牌面映射到座位（庄家 = 1/5/9/东本位）；
- *   v1.5 结算：只认赢家自己的马，N 张 → 胡分 ×N（1 张 = ×1 不翻，0 张 = 原分），
- *   其他座位的马一律不计、不产生任何收付
+ *   v1.5 起只认赢家自马，其他座位的马一律不计、不产生任何收付
+ * - 自马翻倍算术 = horse.timesMode 三选一（v1.8 开关）：
+ *   additive  加法复合：胡分 ×(1+N)，每张自马加 1 个底分后随档位缩放
+ *   geometric 几何翻倍：胡分 ×2^N，每张翻一番
+ *   flat      独立马分：胡分不乘马倍，每张自马其余三家各付 flatBonus 分
  * - 杠分立即结算：「N 倍底分」按底分 2 计 → 点杠 6 / 补杠各 2 / 暗杠各 4
  * - 打鬼罚分（v1.7）：有鬼局打出鬼牌的那家，罚给其余每家各 ghost.penalty 分（默认 1 分/家，共 3 分）；
  *   硬胡局没有鬼牌，自然不会有打鬼事件；一局可发生多次，逐次结算
@@ -20,6 +23,9 @@
 export type Seat = 'E' | 'S' | 'W' | 'N' // 东 / 南 / 西 / 北
 export const SEATS: Seat[] = ['E', 'S', 'W', 'N']
 export type HorseOffset = 0 | 1 | 2 | 3 // 相对庄家：本家 / 下家 / 对家 / 上家
+
+/** v1.8 自马翻倍算术开关：additive ×(1+N) / geometric ×2ⁿ / flat 独立马分 */
+export type HorseTimesMode = 'additive' | 'geometric' | 'flat'
 
 export interface ScoreTierDef {
   patterns: string[] // 该档位所有可报名称
@@ -38,6 +44,8 @@ export interface RuleConfig {
   horse: {
     countByGhost: { withGhost: number; withoutGhost: number } // 摸马张数：有鬼 4 / 没鬼 6
     mapping: Record<string, HorseOffset>
+    timesMode: HorseTimesMode // v1.8 自马翻倍算术开关
+    flatBonus: number // flat 模式专用：每张自马其余三家各付几「分」（默认 1 底分 = 2 分）
   }
   share: { zimoPerLoser: number }
   gang: {
@@ -106,6 +114,8 @@ export const RULES: RuleConfig = {
   horse: {
     countByGhost: { withGhost: 4, withoutGhost: 6 },
     mapping: buildHorseMapping(),
+    timesMode: 'additive', // v1.8 默认加法复合 ×(1+N)；改这一行切换 geometric / flat
+    flatBonus: BASE_UNIT, // flat 模式：每张自马其余三家各付 1 底分 = 2 分
   },
   share: { zimoPerLoser: 1 },
   gang: { dianGang: 3, buGang: 1, anGang: 2 },
@@ -120,12 +130,16 @@ export function horseCountFor(hasGhost: boolean, rules: RuleConfig = RULES): num
 }
 
 /**
- * v1.5 摸马结算口径（固定约定，不进配置）：
- * 赢家自己的马 N 张 → 胡分 ×N；1 张 = ×1 不翻，0 张 = 原分。
- * 其他座位的马一律不计。
+ * v1.8 自马翻倍算术（随 horse.timesMode 开关切换）：
+ * additive  → 1 + N（胡分 ×(1+N)：每张自马加 1 个底分，随档位缩放）
+ * geometric → 2^N（每张翻一番）
+ * flat      → 1（胡分不乘马倍，马分走独立流水 horseLines）
+ * N = 赢家自马张数；0 张时 additive/geometric 均为 ×1。
  */
-export function selfHorseTimes(ownCount: number): number {
-  return Math.max(1, ownCount)
+export function selfHorseTimes(ownCount: number, mode: HorseTimesMode = RULES.horse.timesMode): number {
+  if (mode === 'geometric') return 2 ** ownCount
+  if (mode === 'additive') return 1 + ownCount
+  return 1 // flat
 }
 
 /** 牌面 → 相对庄家偏移；无法识别返回 null */

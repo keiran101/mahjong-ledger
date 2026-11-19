@@ -278,7 +278,9 @@ function openDetail(id) {
   if (e.isVoided) html += `<p class="muted small">此局已作废，分数未计入总分。</p>`
   if (d.tierName || inp.pattern) {
     const selfTimes = d.selfHorseTimes ?? 1
-    const timesLabel = selfTimes > 1 ? `（自己的马 ${d.ownHorseCount ?? 0} 张 → 胡分 ×${selfTimes}）` : ''
+    const ownN = d.ownHorseCount ?? 0
+    const timesLabel = selfTimes > 1 ? `（自己的马 ${ownN} 张 → 胡分 ×${selfTimes}）`
+      : d.horseMode === 'flat' && ownN > 0 ? `（自己的马 ${ownN} 张 · 独立马分）` : ''
     html += kv('胡法', `<b>${d.tierName || inp.pattern}</b>（${d.hasGhost ?? inp.hasGhost ? '有鬼' : '硬胡'}）`)
     if (d.base != null) html += kv('档位基数', `<b class="hl">${d.base} 分</b>${timesLabel}`)
     if (d.zimoPerLoser != null) html += kv('三家各付', `${d.zimoPerLoser} 分，赢家收 ${d.zimoPerLoser * 3} 分`)
@@ -288,6 +290,7 @@ function openDetail(id) {
         : '无'
       html += kv(`摸马 ${d.horseCount} 张`, horse)
     }
+    if ((d.horseLines || []).length) html += kv('自马加分', d.horseLines.join('；'))
     if ((d.gangLines || []).length) html += kv('杠分', d.gangLines.join('；'))
     if ((d.ghostLines || []).length) html += kv('打鬼罚分', d.ghostLines.join('；'))
     if (e.isCorrected) {
@@ -514,11 +517,14 @@ function showPreview(d, input) {
     ? d.horseHits.map((h) => `${h.tile}→${seatLabel(h.seat)}${h.winnerSelf ? '(本人,计翻倍)' : '(不计)'}`).join('、')
     : '无'
   const selfTimes = d.selfHorseTimes ?? 1
-  const timesLabel = selfTimes > 1 ? `（自己的马 ${d.ownHorseCount ?? 0} 张 → 胡分 ×${selfTimes}）` : ''
+  const ownN = d.ownHorseCount ?? 0
+  const timesLabel = selfTimes > 1 ? `（自己的马 ${ownN} 张 → 胡分 ×${selfTimes}）`
+    : d.horseMode === 'flat' && ownN > 0 ? `（自己的马 ${ownN} 张 · 独立马分）` : ''
   let html = kv('胡法', `<b>${d.tierName}</b>（${d.hasGhost ? '有鬼' : '硬胡'}）`)
   html += kv('档位基数', `<b class="hl">${d.base} 分</b>${timesLabel}`)
   html += kv('三家各付', `${d.zimoPerLoser} 分，赢家收 ${d.zimoPerLoser * 3} 分`)
   html += kv(`摸马 ${d.horseCount ?? ''} 张`, horse)
+  if ((d.horseLines || []).length) html += kv('自马加分', d.horseLines.join('；'))
   if (d.gangLines.length) html += kv('杠分', d.gangLines.join('；'))
   if ((d.ghostLines || []).length) html += kv('打鬼罚分', d.ghostLines.join('；'))
   $('#preview-detail').innerHTML = html

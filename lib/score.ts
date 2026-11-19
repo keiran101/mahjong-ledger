@@ -5,7 +5,7 @@
  */
 import {
   RULES, SEATS, horseCountFor, horseOffsetOf, seatFromOffset, selfHorseTimes,
-  type RuleConfig, type Seat,
+  type RuleConfig, type Seat, type HorseTimesMode,
 } from './rules.ts'
 
 export type GangType = 'dian' | 'bu' | 'an'
@@ -46,6 +46,8 @@ export interface ScoreDetail {
   selfHorseTimes: number // 胡分倍数 = max(1, ownHorseCount)（v1.5）
   zimoPerLoser: number
   horseHits: HorseHit[]
+  horseMode: HorseTimesMode // v1.8 自马算术模式快照
+  horseLines: string[] // flat 模式的独立马分流水（additive/geometric 为空）
   gangLines: string[]
   ghostLines: string[] // 打鬼罚分流水（v1.7）
   autoPerPlayer: Record<Seat, number> // 自动算出的四家净分
@@ -79,8 +81,8 @@ export function scoreRound(input: RoundInput, rules: RuleConfig = RULES): ScoreD
   const gangLines: string[] = []
   const gangUnit = rules.baseUnit // 1 底分 = 1 分
 
-  // 1) 摸马（v1.5）：马牌按庄家映射座位；只认赢家自己的马 —— N 张 → 胡分 ×N
-  //    （1 张 = ×1 不翻，0 张 = 原分）；其他座位的马一律不计。
+  // 1) 摸马（v1.8）：马牌按庄家映射座位；只认赢家自马，其他座位的马一律不计。
+  //    翻倍算术随 rules.horse.timesMode 切换（additive ×(1+N) / geometric ×2ⁿ / flat 独立马分）。
   const horseHits: HorseHit[] = []
   let ownHorseCount = 0
   for (const tile of input.horses) {
@@ -91,9 +93,23 @@ export function scoreRound(input: RoundInput, rules: RuleConfig = RULES): ScoreD
     if (winnerSelf) ownHorseCount++
     horseHits.push({ tile, seat, winnerSelf })
   }
-  const selfTimes = selfHorseTimes(ownHorseCount)
+  const mode = rules.horse.timesMode
+  const selfTimes = selfHorseTimes(ownHorseCount, mode)
+  const horseLines: string[] = []
+  if (mode === 'flat' && ownHorseCount > 0) {
+    // flat 模式：马分独立，每张自马其余三家各付 flatBonus 分，不随档位缩放
+    for (const h of horseHits) {
+      if (!h.winnerSelf) continue
+      for (const s of SEATS) {
+        if (s === input.winner) continue
+        per[s] -= rules.horse.flatBonus
+        per[input.winner] += rules.horse.flatBonus
+      }
+      horseLines.push(`自马 ${h.tile}：其余三家各付 ${rules.horse.flatBonus} 分`)
+    }
+  }
 
-  // 2) 胡牌主分：只有自摸，三家各付 1 份，赢家收 3 份；胡分按自己的马张数翻倍
+  // 2) 胡牌主分：只有自摸，三家各付 1 份，赢家收 3 份；胡分按马倍缩放（flat 模式 ×1）
   const oneShare = base * selfTimes * rules.share.zimoPerLoser
   for (const s of SEATS) {
     if (s === input.winner) per[s] += oneShare * 3
@@ -146,6 +162,8 @@ export function scoreRound(input: RoundInput, rules: RuleConfig = RULES): ScoreD
     selfHorseTimes: selfTimes,
     zimoPerLoser: oneShare,
     horseHits,
+    horseMode: mode,
+    horseLines,
     gangLines,
     ghostLines,
     autoPerPlayer,

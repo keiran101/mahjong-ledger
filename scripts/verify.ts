@@ -9,8 +9,8 @@ import { minTransfers, assertBalanced } from '../lib/settle.ts'
 
 const NAME: Record<Seat, string> = { E: '东', S: '南', W: '西', N: '北' }
 
-function show(title: string, input: RoundInput) {
-  const d = scoreRound(input)
+function show(title: string, input: RoundInput, rules: typeof RULES = RULES) {
+  const d = scoreRound(input, rules)
   const row = SEATS.map((s) => `${NAME[s]} ${d.perPlayer[s] > 0 ? '+' : ''}${d.perPlayer[s]}`).join('  ')
   const hits = d.horseHits.length
     ? d.horseHits.map((h) => `${h.tile}→${NAME[h.seat]}${h.winnerSelf ? '(本人,计翻倍)' : '(不计)'}`).join(' ')
@@ -19,8 +19,9 @@ function show(title: string, input: RoundInput) {
   assertBalanced(d.perPlayer, transfers)
 
   console.log(`\n【${title}】`)
-  console.log(`  胡法=${d.tierName} ${d.hasGhost ? '有鬼' : '硬胡(无鬼)'}  基数=${d.base}分  每家付=${d.zimoPerLoser}分`)
+  console.log(`  胡法=${d.tierName} ${d.hasGhost ? '有鬼' : '硬胡(无鬼)'}  基数=${d.base}分  每家付=${d.zimoPerLoser}分  马倍=${d.selfHorseTimes}(${d.horseMode})`)
   console.log(`  马: ${hits}`)
+  if (d.horseLines.length) console.log(`  马分: ${d.horseLines.join('; ')}`)
   if (d.gangLines.length) console.log(`  杠: ${d.gangLines.join('; ')}`)
   if (d.ghostLines.length) console.log(`  打鬼: ${d.ghostLines.join('; ')}`)
   console.log(`  四家净分: ${row}`)
@@ -36,19 +37,19 @@ show('例1 鸡胡有鬼·无马', {
   winner: 'E', dealer: 'E', pattern: '鸡胡', hasGhost: true, horses: [],
 })
 
-// 例 2：鸡胡有鬼 + 4 张马（庄家=东，赢家=东）→ 自己的马 2 张 → 胡分 ×2（v1.5）
+// 例 2：鸡胡有鬼 + 4 张马（庄家=东，赢家=东）→ 自己的马 2 张 → 胡分 ×3（v1.8 additive）
 // 5万→东(本人,计翻倍) 红中→南(不计) 西风→西(不计) 9筒→东(本人,计翻倍)
-// base 2 × 2 = 每家付 4，赢家收 12；其他家的马不产生任何收付
-const d2 = show('例2 鸡胡有鬼·自己的马2张→×2', {
+// base 2 × (1+2) = 每家付 6，赢家收 18；其他家的马不产生任何收付
+const d2 = show('例2 鸡胡有鬼·自己的马2张→×3', {
   winner: 'E', dealer: 'E', pattern: '鸡胡', hasGhost: true,
   horses: ['5万', '红中', '西风', '9筒'],
 })
 assert.equal(d2.ownHorseCount, 2)
-assert.equal(d2.selfHorseTimes, 2)
-assert.equal(d2.zimoPerLoser, 4)
-assert.equal(d2.perPlayer.E, 12)
-assert.equal(d2.perPlayer.S, -4)
-assert.equal(d2.perPlayer.W, -4)
+assert.equal(d2.selfHorseTimes, 3)
+assert.equal(d2.zimoPerLoser, 6)
+assert.equal(d2.perPlayer.E, 18)
+assert.equal(d2.perPlayer.S, -6)
+assert.equal(d2.perPlayer.W, -6)
 
 // 例 3：清一色、硬胡、无马 → base 16，赢家收 48
 show('例3 清一色硬胡·无马', {
@@ -127,7 +128,7 @@ assert.equal(RULES.horse.countByGhost.withoutGhost, 6)
 console.log('\n【例11 摸马张数】有鬼 4 张 / 没鬼(硬胡) 6 张  OK')
 
 // 例 12：有鬼局摸 4 张马（庄家=东，赢家=东）
-// 5万→东(本人) 红中→南 西风→西 9筒→东(本人)：自己的马 2 张 → ×2，与他家马无关
+// 5万→东(本人) 红中→南 西风→西 9筒→东(本人)：自己的马 2 张 → ×3（v1.8 additive），与他家马无关
 const d12 = show('例12 鸡胡有鬼·摸满4张马', {
   winner: 'E', dealer: 'E', pattern: '鸡胡', hasGhost: true,
   horses: ['5万', '红中', '西风', '9筒'],
@@ -135,21 +136,21 @@ const d12 = show('例12 鸡胡有鬼·摸满4张马', {
 assert.equal(d12.horseCount, 4)
 assert.equal(d12.horseHits.length, 4)
 assert.equal(d12.ownHorseCount, 2)
-assert.equal(d12.selfHorseTimes, 2)
-assert.equal(d12.perPlayer.E, 12)
+assert.equal(d12.selfHorseTimes, 3)
+assert.equal(d12.perPlayer.E, 18)
 
-// 例 13：硬胡局摸 6 张马 —— 张数上限生效；自己的马 2 张 → ×2（v1.5）
+// 例 13：硬胡局摸 6 张马 —— 张数上限生效；自己的马 2 张 → ×3（v1.8 additive）
 // 庄家=南：本家=南(1万) 下家=西(2万/6条) 对家=北(3万/7条) 上家=东(4万)
-// 赢家=北 → 自己的马 = 3万、7条 共 2 张 → 胡分 ×2；其余马不计
-const d13 = show('例13 清一色硬胡·摸满6张马·自己的马2张×2', {
+// 赢家=北 → 自己的马 = 3万、7条 共 2 张 → 胡分 ×3；其余马不计
+const d13 = show('例13 清一色硬胡·摸满6张马·自己的马2张×3', {
   winner: 'N', dealer: 'S', pattern: '清一色', hasGhost: false,
   horses: ['1万', '2万', '3万', '4万', '6条', '7条'],
 })
 assert.equal(d13.horseCount, 6)
 assert.equal(d13.horseHits.length, 6)
 assert.equal(d13.ownHorseCount, 2)
-assert.equal(d13.selfHorseTimes, 2)
-assert.equal(d13.zimoPerLoser, 32, '清一色硬胡 16 × 2')
+assert.equal(d13.selfHorseTimes, 3)
+assert.equal(d13.zimoPerLoser, 48, '清一色硬胡 16 × 3')
 assert.equal(d13.totalCheck, 0)
 
 // 例 14：超张数必须被机械拦截（有鬼 >4、硬胡 >6）
@@ -168,31 +169,73 @@ assert.doesNotThrow(() => scoreRound({
 }))
 console.log('【例14 超张数拦截】有鬼>4 / 硬胡>6 均报错，硬胡恰好6张合法  OK')
 
-// 例 15：自己的马 1 张 → ×1 不翻（v1.5 口径：1 张不变）
+// 例 15：自己的马 1 张 → ×2（v1.8 additive：每张自马加 1 个底分，1 张也翻）
 // 庄家=南，赢家=北：3万→对家=北（唯一自己的马），其余不计
-const d15 = show('例15 清一色硬胡·自己的马1张不翻', {
+const d15 = show('例15 清一色硬胡·自己的马1张×2', {
   winner: 'N', dealer: 'S', pattern: '清一色', hasGhost: false,
   horses: ['3万', '1万', '2万'],
 })
 assert.equal(d15.ownHorseCount, 1)
-assert.equal(d15.selfHorseTimes, 1)
-assert.equal(d15.zimoPerLoser, 16)
+assert.equal(d15.selfHorseTimes, 2)
+assert.equal(d15.zimoPerLoser, 32, '清一色硬胡 16 × 2')
 const d15plain = scoreRound({
   winner: 'N', dealer: 'S', pattern: '清一色', hasGhost: false, horses: [],
 })
-assert.deepEqual(d15.perPlayer, d15plain.perPlayer, '1 张自己的马 = ×1，与无马净分一致')
+assert.equal(d15.perPlayer.N - d15plain.perPlayer.N, 48, '1 张自马比无马多收 48（每家 16×2×3 家）')
 
-// 例 16：自己的马 4 张 → ×4（v1.5 上限算例）
+// 例 16：自己的马 4 张 → ×5（v1.8 additive 上限算例）
 // 庄家=东，赢家=东：5万/9万/5条/东风 全部映射到东
-const d16 = show('例16 鸡胡有鬼·自己的马4张×4', {
+const d16 = show('例16 鸡胡有鬼·自己的马4张×5', {
   winner: 'E', dealer: 'E', pattern: '鸡胡', hasGhost: true,
   horses: ['5万', '9万', '5条', '东风'],
 })
 assert.equal(d16.ownHorseCount, 4)
-assert.equal(d16.selfHorseTimes, 4)
-assert.equal(d16.zimoPerLoser, 8, '鸡胡有鬼 2 × 4')
-assert.equal(d16.perPlayer.E, 24)
-for (const s of SEATS.filter((x) => x !== 'E')) assert.equal(d16.perPlayer[s], -8)
+assert.equal(d16.selfHorseTimes, 5)
+assert.equal(d16.zimoPerLoser, 10, '鸡胡有鬼 2 × 5')
+assert.equal(d16.perPlayer.E, 30)
+for (const s of SEATS.filter((x) => x !== 'E')) assert.equal(d16.perPlayer[s], -10)
+
+// ───── v1.8 算术开关对照（同一组自马输入 × 三种模式）─────
+// 输入统一：清一色有鬼（base=8/家），庄家=东 赢家=东，自马 2 张（5万、5条）
+const modeInput: RoundInput = {
+  winner: 'E', dealer: 'E', pattern: '清一色', hasGhost: true,
+  horses: ['5万', '5条'],
+}
+
+// 例 19：additive（默认）→ ×3 → 每家 24
+const d19 = show('例19 additive×(1+N)·自马2张', modeInput)
+assert.equal(d19.horseMode, 'additive')
+assert.equal(d19.selfHorseTimes, 3)
+assert.equal(d19.zimoPerLoser, 24)
+assert.equal(d19.horseLines.length, 0, 'additive 模式无独立马分流水')
+
+// 例 20：geometric → ×4 → 每家 32
+const RULES_GEO = { ...RULES, horse: { ...RULES.horse, timesMode: 'geometric' as const } }
+const d20 = show('例20 geometric×2ⁿ·自马2张', modeInput, RULES_GEO)
+assert.equal(d20.horseMode, 'geometric')
+assert.equal(d20.selfHorseTimes, 4)
+assert.equal(d20.zimoPerLoser, 32)
+assert.equal(d20.horseLines.length, 0)
+
+// 例 21：flat → 胡分不乘马倍（8/家）+ 每张自马其余三家各付 2 分 → 每家 8+4=12
+const RULES_FLAT = { ...RULES, horse: { ...RULES.horse, timesMode: 'flat' as const } }
+const d21 = show('例21 flat独立马分·自马2张', modeInput, RULES_FLAT)
+assert.equal(d21.horseMode, 'flat')
+assert.equal(d21.selfHorseTimes, 1, 'flat 模式胡分不乘马倍')
+assert.equal(d21.zimoPerLoser, 8)
+assert.equal(d21.horseLines.length, 2)
+assert.equal(d21.perPlayer.E, 36, '24 胡分 + 2×6 马分')
+for (const s of SEATS.filter((x) => x !== 'E')) assert.equal(d21.perPlayer[s], -12)
+console.log('\n【例19-21 算术开关】additive 24 / geometric 32 / flat 12（同为清一色+自马2张）  OK')
+
+// 例 22：flat 模式 1 张自马也有效（对照：无马）
+const d22 = show('例22 flat·自马1张', {
+  winner: 'E', dealer: 'E', pattern: '鸡胡', hasGhost: true,
+  horses: ['5万'],
+}, RULES_FLAT)
+assert.equal(d22.horseLines.length, 1)
+assert.equal(d22.perPlayer.E, 12, '6 胡分 + 6 马分')
+for (const s of SEATS.filter((x) => x !== 'E')) assert.equal(d22.perPlayer[s], -4)
 
 // 例 17：打鬼罚分（v1.7）—— 南家打鬼，罚给其余每家各 1 分（共 3 分）
 // 鸡胡有鬼 base=2：赢家东收 6；南再付打鬼 3（每家 1）→ 东 +7、南 -5、西/北 各 -1
@@ -221,4 +264,4 @@ assert.equal(d18.ghostLines.length, 2)
 assert.deepEqual(d18.perPlayer, { E: 20, S: -4, W: -8, N: -8 })
 assert.equal(d18.totalCheck, 0)
 
-console.log('\n全部算例通过：零和、马映射/张数/只认赢家马×N、杠分、打鬼罚分、手改、非法输入、底分与表值回归均 OK')
+console.log('\n全部算例通过：零和、马映射/张数/自马三算术开关、杠分、打鬼罚分、手改、非法输入、底分与表值回归均 OK')
