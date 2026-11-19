@@ -460,13 +460,15 @@ async function confirmScore() {
   }
   return busy($('#btn-confirm'), '落账中…', async () => {
     try {
-      await api(`/api/rooms/${S.code}/events`, body)
+      const st = await api(`/api/rooms/${S.code}/events`, body)
       $('#preview-modal').classList.add('hidden')
       S.form = freshForm()
       renderScoreForm()
       await loadData()
       switchTab('board')
-      toast('已记入账本')
+      toast(st?.dealer && st.dealer !== input.dealer
+        ? `已记入账本 · 赢家坐庄，${seatLabel(st.dealer)}家接庄`
+        : '已记入账本')
     } catch (e) { toast(e.message) }
   })
 }

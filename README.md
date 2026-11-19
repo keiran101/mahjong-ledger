@@ -48,7 +48,8 @@ Windows 可双击 `start.bat`；WSL2 / macOS / Linux 用 `./start.sh`（若解�
 | `lib/pattern.ts` | 确认后的牌面 → 胡法档位建议 | 多档取最高倍数 |
 | `server.mjs` | 原生 HTTP 单端口、静态资源 `no-store`、全部 API 路由 | 绑定 `0.0.0.0`，便于局域网手机访问 |
 | `public/index.html` / `style.css` / `app.js` | 前端三件套，零构建 | `app.js` 依赖 63 个 DOM 钩子，改 HTML 前先看 §9 |
-| `scripts/verify.ts` | 14 个规则算例回归 | 改规则后必跑 |
+| `scripts/verify.ts` | 16 个规则算例回归（含 v1.5 摸马 ×N） | 改规则后必跑 |
+| `scripts/verify-store.ts` | 账本层回归：赢家坐庄轮转 / 作废回滚 / 手改不动庄 | 改 `store.mjs` 后必跑（用独立临时库） |
 | `data/` | 运行时生成（空目录，仅 `.gitkeep`） | 已 gitignore |
 | `demo/mahjong-demo.db` | 可选演示账本（含验收房间 QBWEZZ 的 3 局） | 只读快照，不含密钥 |
 | `docs/` | 规格、设计方向、18 张实拍证据 | 见 §10 |
@@ -88,10 +89,11 @@ MJ_DB=./demo/mahjong-demo.db PORT=3001 npm start
 ## 5. 改了规则怎么验证
 
 ```bash
-node --experimental-strip-types scripts/verify.ts
+node --experimental-strip-types scripts/verify.ts                    # 规则算例（16 个）
+node --experimental-sqlite --experimental-strip-types scripts/verify-store.ts   # 账本层（庄家轮转）
 ```
 
-14 个算例覆盖：底分与表值回归、三种杠分、马牌座位映射、硬胡 6 张合法 / 7 张拦截、手改、零和不变量。全部通过会打印 `全部算例通过`。
+规则算例覆盖：底分与表值回归、三种杠分、马牌座位映射、赢家马 ×N 翻倍、硬胡 6 张合法 / 7 张拦截、手改、零和不变量。账本算例覆盖：默认庄东、手选兜底、落账赢家坐庄、作废回滚、手改不动庄。全部通过会打印 `全部算例通过` / `全部通过`。
 
 服务起来后另可查：
 
@@ -114,6 +116,8 @@ curl http://localhost:3000/api/rules      # 规则表 + horseCount {withGhost:4,
 ```
 
 **铁律**：LLM 和前端都不允许产出分数；分数只由可验证的纯函数计算。重放时只累加冻结的 `net`，不重算旧局，所以改规则不会翻历史账。
+
+**庄家**（v1.6）：**赢家坐庄**——落账事务内庄家自动变为该局赢家；作废一局按剩余局回滚（全部作废退回该局开打前的庄家）；看板手选按钮仍是兜底覆盖。流局不记分、不切庄。
 
 本桌规则要点：**无点炮，只有自摸，三家各付 1 份**；**摸马**（v1.5）只认赢家自己的马——马牌按庄家映射座位（庄家 = 1/5/9/东本位），赢家自己的马 N 张 → 胡分 ×N（1 张 = ×1 不翻，0 张 = 原分），其他座位的马一律不计；摸马张数＝有鬼 4 张、没鬼/硬胡 6 张；杠分独立按底分结算（点杠 6 / 补杠各 2 / 暗杠各 4）。
 
