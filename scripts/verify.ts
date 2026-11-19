@@ -13,7 +13,7 @@ function show(title: string, input: RoundInput) {
   const d = scoreRound(input)
   const row = SEATS.map((s) => `${NAME[s]} ${d.perPlayer[s] > 0 ? '+' : ''}${d.perPlayer[s]}`).join('  ')
   const hits = d.horseHits.length
-    ? d.horseHits.map((h) => `${h.tile}→${NAME[h.seat]}${h.winnerSelf ? '(赢家本人,不计)' : ''}`).join(' ')
+    ? d.horseHits.map((h) => `${h.tile}→${NAME[h.seat]}${h.winnerSelf ? '(本人,计翻倍)' : '(不计)'}`).join(' ')
     : '无'
   const transfers = minTransfers(d.perPlayer, RULES)
   assertBalanced(d.perPlayer, transfers)
@@ -35,12 +35,19 @@ show('例1 鸡胡有鬼·无马', {
   winner: 'E', dealer: 'E', pattern: '鸡胡', hasGhost: true, horses: [],
 })
 
-// 例 2：鸡胡有鬼 + 4 张马（庄家=东，赢家=东）
-// 5万→东(赢家本人,不计) 红中→南 西风→西 9筒→东(赢家本人,不计)
-show('例2 鸡胡有鬼·中马2匹', {
+// 例 2：鸡胡有鬼 + 4 张马（庄家=东，赢家=东）→ 自己的马 2 张 → 胡分 ×2（v1.5）
+// 5万→东(本人,计翻倍) 红中→南(不计) 西风→西(不计) 9筒→东(本人,计翻倍)
+// base 2 × 2 = 每家付 4，赢家收 12；其他家的马不产生任何收付
+const d2 = show('例2 鸡胡有鬼·自己的马2张→×2', {
   winner: 'E', dealer: 'E', pattern: '鸡胡', hasGhost: true,
   horses: ['5万', '红中', '西风', '9筒'],
 })
+assert.equal(d2.ownHorseCount, 2)
+assert.equal(d2.selfHorseTimes, 2)
+assert.equal(d2.zimoPerLoser, 4)
+assert.equal(d2.perPlayer.E, 12)
+assert.equal(d2.perPlayer.S, -4)
+assert.equal(d2.perPlayer.W, -4)
 
 // 例 3：清一色、硬胡、无马 → base 16，赢家收 48
 show('例3 清一色硬胡·无马', {
@@ -55,10 +62,16 @@ show('例4 七对有鬼·带暗杠', {
 })
 
 // 例 5：庄家不是东时马牌映射（庄家=南，6条→下家=西，红中→下家=西）
-show('例5 庄家=南·马映射', {
+// 两张马都映射到西（非赢家）→ 一律不计，净分与无马完全相同（v1.5）
+const d5 = show('例5 庄家=南·马映射·他家马不计', {
   winner: 'N', dealer: 'S', pattern: '碰碰胡', hasGhost: true,
   horses: ['6条', '红中'],
 })
+const d5plain = show('例5b 同局无马对照', {
+  winner: 'N', dealer: 'S', pattern: '碰碰胡', hasGhost: true, horses: [],
+})
+assert.deepEqual(d5.perPlayer, d5plain.perPlayer, '他家马不得影响净分')
+assert.equal(d5.selfHorseTimes, 1)
 
 // 例 6：确认页手改兜底
 const d6 = show('例6 手改覆盖', {
@@ -112,23 +125,30 @@ assert.equal(RULES.horse.countByGhost.withGhost, 4)
 assert.equal(RULES.horse.countByGhost.withoutGhost, 6)
 console.log('\n【例11 摸马张数】有鬼 4 张 / 没鬼(硬胡) 6 张  OK')
 
-// 例 12：有鬼局摸 4 张马全部中马（庄家=东，赢家=东）
-// 5万→东(赢家不计) 红中→南 西风→西 9筒→东(赢家不计)：命中 4 张但只 2 张有效
+// 例 12：有鬼局摸 4 张马（庄家=东，赢家=东）
+// 5万→东(本人) 红中→南 西风→西 9筒→东(本人)：自己的马 2 张 → ×2，与他家马无关
 const d12 = show('例12 鸡胡有鬼·摸满4张马', {
   winner: 'E', dealer: 'E', pattern: '鸡胡', hasGhost: true,
   horses: ['5万', '红中', '西风', '9筒'],
 })
 assert.equal(d12.horseCount, 4)
 assert.equal(d12.horseHits.length, 4)
+assert.equal(d12.ownHorseCount, 2)
+assert.equal(d12.selfHorseTimes, 2)
+assert.equal(d12.perPlayer.E, 12)
 
-// 例 13：硬胡局摸 6 张马 —— 张数上限生效，且逐张结算、零和
-// 基数 4（鸡胡硬胡）；1万/5万/9筒→东(赢家不计)，其余映射到各家中马
-const d13 = show('例13 清一色硬胡·摸满6张马', {
+// 例 13：硬胡局摸 6 张马 —— 张数上限生效；自己的马 2 张 → ×2（v1.5）
+// 庄家=南：本家=南(1万) 下家=西(2万/6条) 对家=北(3万/7条) 上家=东(4万)
+// 赢家=北 → 自己的马 = 3万、7条 共 2 张 → 胡分 ×2；其余马不计
+const d13 = show('例13 清一色硬胡·摸满6张马·自己的马2张×2', {
   winner: 'N', dealer: 'S', pattern: '清一色', hasGhost: false,
   horses: ['1万', '2万', '3万', '4万', '6条', '7条'],
 })
 assert.equal(d13.horseCount, 6)
 assert.equal(d13.horseHits.length, 6)
+assert.equal(d13.ownHorseCount, 2)
+assert.equal(d13.selfHorseTimes, 2)
+assert.equal(d13.zimoPerLoser, 32, '清一色硬胡 16 × 2')
 assert.equal(d13.totalCheck, 0)
 
 // 例 14：超张数必须被机械拦截（有鬼 >4、硬胡 >6）
@@ -147,4 +167,30 @@ assert.doesNotThrow(() => scoreRound({
 }))
 console.log('【例14 超张数拦截】有鬼>4 / 硬胡>6 均报错，硬胡恰好6张合法  OK')
 
-console.log('\n全部算例通过：零和、马映射/张数、杠分、手改、非法输入、底分与表值回归均 OK')
+// 例 15：自己的马 1 张 → ×1 不翻（v1.5 口径：1 张不变）
+// 庄家=南，赢家=北：3万→对家=北（唯一自己的马），其余不计
+const d15 = show('例15 清一色硬胡·自己的马1张不翻', {
+  winner: 'N', dealer: 'S', pattern: '清一色', hasGhost: false,
+  horses: ['3万', '1万', '2万'],
+})
+assert.equal(d15.ownHorseCount, 1)
+assert.equal(d15.selfHorseTimes, 1)
+assert.equal(d15.zimoPerLoser, 16)
+const d15plain = scoreRound({
+  winner: 'N', dealer: 'S', pattern: '清一色', hasGhost: false, horses: [],
+})
+assert.deepEqual(d15.perPlayer, d15plain.perPlayer, '1 张自己的马 = ×1，与无马净分一致')
+
+// 例 16：自己的马 4 张 → ×4（v1.5 上限算例）
+// 庄家=东，赢家=东：5万/9万/5条/东风 全部映射到东
+const d16 = show('例16 鸡胡有鬼·自己的马4张×4', {
+  winner: 'E', dealer: 'E', pattern: '鸡胡', hasGhost: true,
+  horses: ['5万', '9万', '5条', '东风'],
+})
+assert.equal(d16.ownHorseCount, 4)
+assert.equal(d16.selfHorseTimes, 4)
+assert.equal(d16.zimoPerLoser, 8, '鸡胡有鬼 2 × 4')
+assert.equal(d16.perPlayer.E, 24)
+for (const s of SEATS.filter((x) => x !== 'E')) assert.equal(d16.perPlayer[s], -8)
+
+console.log('\n全部算例通过：零和、马映射/张数/只认赢家马×N、杠分、手改、非法输入、底分与表值回归均 OK')

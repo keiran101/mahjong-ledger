@@ -4,7 +4,7 @@
  * 摸马张数由 horseCountFor(hasGhost) 决定（有鬼 4 / 没鬼 6），引擎只遍历数组、不假设张数。
  */
 import {
-  RULES, SEATS, horseCountFor, horseOffsetOf, seatFromOffset,
+  RULES, SEATS, horseCountFor, horseOffsetOf, seatFromOffset, selfHorseTimes,
   type RuleConfig, type Seat,
 } from './rules.ts'
 
@@ -29,14 +29,16 @@ export interface RoundInput {
 export interface HorseHit {
   tile: string
   seat: Seat
-  winnerSelf: boolean // 中马者就是赢家本人 → 自己付自己，不计
+  winnerSelf: boolean // 中马者=赢家本人 → 计入翻倍；其他座位的马不计
 }
 
 export interface ScoreDetail {
   tierName: string
-  base: number // 该局胡法分数
+  base: number // 该局胡法分数（查表原始值，未乘马倍）
   hasGhost: boolean
   horseCount: number // 本局摸马张数上限
+  ownHorseCount: number // 赢家自己的马张数（v1.5）
+  selfHorseTimes: number // 胡分倍数 = max(1, ownHorseCount)（v1.5）
   zimoPerLoser: number
   horseHits: HorseHit[]
   gangLines: string[]
@@ -71,25 +73,25 @@ export function scoreRound(input: RoundInput, rules: RuleConfig = RULES): ScoreD
   const gangLines: string[] = []
   const gangUnit = rules.baseUnit // 1 底分 = 1 分
 
-  // 1) 胡牌主分：只有自摸，三家各付 1 份，赢家收 3 份
-  const oneShare = base * rules.share.zimoPerLoser
-  for (const s of SEATS) {
-    if (s === input.winner) per[s] += oneShare * 3
-    else per[s] -= oneShare
-  }
-
-  // 2) 摸马：每张中马牌映射到座位；中马者额外付赢家 1 份（中马者=赢家则不计）
+  // 1) 摸马（v1.5）：马牌按庄家映射座位；只认赢家自己的马 —— N 张 → 胡分 ×N
+  //    （1 张 = ×1 不翻，0 张 = 原分）；其他座位的马一律不计。
   const horseHits: HorseHit[] = []
+  let ownHorseCount = 0
   for (const tile of input.horses) {
     const offset = horseOffsetOf(tile, rules)
     if (offset === null) throw new Error(`无法识别马牌「${tile}」`)
     const seat = seatFromOffset(offset, input.dealer)
     const winnerSelf = seat === input.winner
+    if (winnerSelf) ownHorseCount++
     horseHits.push({ tile, seat, winnerSelf })
-    if (winnerSelf) continue
-    const extra = base * rules.horse.perHit
-    per[seat] -= extra
-    per[input.winner] += extra
+  }
+  const selfTimes = selfHorseTimes(ownHorseCount)
+
+  // 2) 胡牌主分：只有自摸，三家各付 1 份，赢家收 3 份；胡分按自己的马张数翻倍
+  const oneShare = base * selfTimes * rules.share.zimoPerLoser
+  for (const s of SEATS) {
+    if (s === input.winner) per[s] += oneShare * 3
+    else per[s] -= oneShare
   }
 
   // 3) 杠分：立即结算，独立流水，单位固定为「底分」，不随胡法分数缩放
@@ -122,6 +124,8 @@ export function scoreRound(input: RoundInput, rules: RuleConfig = RULES): ScoreD
     base,
     hasGhost: input.hasGhost,
     horseCount,
+    ownHorseCount,
+    selfHorseTimes: selfTimes,
     zimoPerLoser: oneShare,
     horseHits,
     gangLines,

@@ -3,13 +3,15 @@
  * 来源：用户提供的规则图 + 口头确认
  * 改规则只改本文件，不动 score.ts。
  *
- * 关键口径（v1.4：摸马张数按有无鬼）：
+ * 关键口径（v1.5：摸马只认赢家自己的马）：
  * - 底分 = 2 分。鸡胡有鬼 = 1 倍底分 = 2 分，即「鸡胡就是底分 2」
  * - 表格各档 = 底分 × 倍数（1/2/4/6/8/10/12）；硬胡(无鬼) = 有鬼 ×2
  * - 无点炮：所有胡牌都是自摸（或抢杠胡），三家各付 1 份，赢家收 3 份
  * - 用户直接报胡法档位，系统不识别牌型、不判定叠加
  * - 摸马（非买马）：胡牌后按有无鬼摸固定张数 —— 有鬼摸 4 张、没鬼（硬胡）摸 6 张；
- *   录入的每张马牌 = 该张中马，按牌面映射到座位，中马者额外付赢家 1 份该局胡法分数
+ *   马牌按牌面映射到座位（庄家 = 1/5/9/东本位）；
+ *   v1.5 结算：只认赢家自己的马，N 张 → 胡分 ×N（1 张 = ×1 不翻，0 张 = 原分），
+ *   其他座位的马一律不计、不产生任何收付
  * - 杠分立即结算：「N 倍底分」按底分 2 计 → 点杠 6 / 补杠各 2 / 暗杠各 4
  */
 
@@ -33,7 +35,6 @@ export interface RuleConfig {
   hardMultiplier: number // 硬胡(无鬼) 倍数 = 2
   horse: {
     countByGhost: { withGhost: number; withoutGhost: number } // 摸马张数：有鬼 4 / 没鬼 6
-    perHit: number // 中一马额外付几「份」（1 份 = 该局胡法分数）
     mapping: Record<string, HorseOffset>
   }
   share: { zimoPerLoser: number }
@@ -99,7 +100,6 @@ export const RULES: RuleConfig = {
   hardMultiplier: HARD_MULTIPLIER,
   horse: {
     countByGhost: { withGhost: 4, withoutGhost: 6 },
-    perHit: 1,
     mapping: buildHorseMapping(),
   },
   share: { zimoPerLoser: 1 },
@@ -111,6 +111,15 @@ export const RULES: RuleConfig = {
 /** 本局该摸几张马：有鬼 4 张、没鬼（硬胡）6 张。全链路唯一口径。 */
 export function horseCountFor(hasGhost: boolean, rules: RuleConfig = RULES): number {
   return hasGhost ? rules.horse.countByGhost.withGhost : rules.horse.countByGhost.withoutGhost
+}
+
+/**
+ * v1.5 摸马结算口径（固定约定，不进配置）：
+ * 赢家自己的马 N 张 → 胡分 ×N；1 张 = ×1 不翻，0 张 = 原分。
+ * 其他座位的马一律不计。
+ */
+export function selfHorseTimes(ownCount: number): number {
+  return Math.max(1, ownCount)
 }
 
 /** 牌面 → 相对庄家偏移；无法识别返回 null */

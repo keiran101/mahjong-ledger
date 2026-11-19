@@ -431,10 +431,12 @@ function bindNetEdit(container, sumEl) {
 function showPreview(d, input) {
   $('#preview-title').textContent = '本局算分预览'
   const horse = d.horseHits.length
-    ? d.horseHits.map((h) => `${h.tile}→${seatLabel(h.seat)}${h.winnerSelf ? '(本人不计)' : ''}`).join('、')
+    ? d.horseHits.map((h) => `${h.tile}→${seatLabel(h.seat)}${h.winnerSelf ? '(本人,计翻倍)' : '(不计)'}`).join('、')
     : '无'
+  const selfTimes = d.selfHorseTimes ?? 1
+  const timesLabel = selfTimes > 1 ? `（自己的马 ${d.ownHorseCount ?? 0} 张 → 胡分 ×${selfTimes}）` : ''
   let html = kv('胡法', `<b>${d.tierName}</b>（${d.hasGhost ? '有鬼' : '硬胡'}）`)
-  html += kv('档位基数', `<b class="hl">${d.base} 分</b>`)
+  html += kv('档位基数', `<b class="hl">${d.base} 分</b>${timesLabel}`)
   html += kv('三家各付', `${d.zimoPerLoser} 分，赢家收 ${d.zimoPerLoser * 3} 分`)
   html += kv(`摸马 ${d.horseCount ?? ''} 张`, horse)
   if (d.gangLines.length) html += kv('杠分', d.gangLines.join('；'))
