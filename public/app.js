@@ -17,7 +17,7 @@ function horseMax(hasGhost) {
   return hasGhost ? 4 : 6
 }
 function freshForm() {
-  return { winner: null, pattern: null, hasGhost: true, horses: new Array(horseMax(true)).fill(''), gangEvents: [] }
+  return { winner: null, pattern: null, hasGhost: true, horses: new Array(horseMax(true)).fill(''), gangEvents: [], ghostEvents: [] }
 }
 
 const S = {
@@ -289,6 +289,7 @@ function openDetail(id) {
       html += kv(`摸马 ${d.horseCount} 张`, horse)
     }
     if ((d.gangLines || []).length) html += kv('杠分', d.gangLines.join('；'))
+    if ((d.ghostLines || []).length) html += kv('打鬼罚分', d.ghostLines.join('；'))
     if (e.isCorrected) {
       const orig = d.perPlayer || {}
       const origRow = SEATS.map((s) => `${SN[s]} ${fmt(Number(orig[s]) || 0)}`).join(' / ')
@@ -411,6 +412,23 @@ function renderScoreForm() {
 
   $('#gang-list').innerHTML = ''
   f.gangEvents = []
+  $('#ghost-list').innerHTML = ''
+  f.ghostEvents = []
+}
+
+function addGhost() {
+  const row = document.createElement('div')
+  row.className = 'gang-item ghost-item'
+  row.innerHTML = `
+    <span class="ghost-label">打鬼</span>
+    <select class="g-by" aria-label="谁打的鬼">${SEATS.map((s) => `<option value="${s}">${seatLabel(s)}</option>`).join('')}</select>
+    <button class="gang-del" type="button" aria-label="删除这条打鬼">×</button>`
+  $('#ghost-list').appendChild(row)
+  row.querySelector('.gang-del').onclick = () => row.remove()
+}
+
+function collectGhost() {
+  S.form.ghostEvents = $$('#ghost-list .ghost-item').map((row) => ({ by: row.querySelector('.g-by').value }))
 }
 
 function addGang() {
@@ -448,6 +466,7 @@ async function doPreview() {
   if (!f.winner) return toast('先选谁胡了')
   if (!f.pattern) return toast('先报一个胡型')
   collectGang()
+  collectGhost()
   return busy($('#btn-preview'), '计算中…', async () => {
     try {
       const r = await api(`/api/rooms/${S.code}/preview`, {
@@ -456,6 +475,7 @@ async function doPreview() {
         hasGhost: f.hasGhost,
         horses: f.horses.filter(Boolean),
         gangEvents: f.gangEvents,
+        ghostEvents: f.ghostEvents,
       })
       S.preview = r
       S.previewSource = 'manual'
@@ -500,6 +520,7 @@ function showPreview(d, input) {
   html += kv('三家各付', `${d.zimoPerLoser} 分，赢家收 ${d.zimoPerLoser * 3} 分`)
   html += kv(`摸马 ${d.horseCount ?? ''} 张`, horse)
   if (d.gangLines.length) html += kv('杠分', d.gangLines.join('；'))
+  if ((d.ghostLines || []).length) html += kv('打鬼罚分', d.ghostLines.join('；'))
   $('#preview-detail').innerHTML = html
   $('#preview-net').innerHTML = SEATS.map((s) =>
     `<label><span>${seatLabel(s)}</span><input type="number" inputmode="numeric" data-seat="${s}" value="${d.perPlayer[s]}"></label>`).join('')
@@ -816,6 +837,7 @@ function fillFormFromParsed() {
     hasGhost: inp.hasGhost,
     horses: Array.from({ length: horseMax(inp.hasGhost) }, (_, i) => inp.horses[i] || ''),
     gangEvents: [],
+    ghostEvents: [],
   }
   renderScoreForm()
   inp.gangEvents.forEach((g) => {
@@ -827,7 +849,13 @@ function fillFormFromParsed() {
     if (g.type === 'dian') fromSel.value = g.from
     syncGangFromRow(row)
   })
+  ;(inp.ghostEvents || []).forEach((g) => {
+    addGhost()
+    const row = $$('#ghost-list .ghost-item').pop()
+    row.querySelector('.g-by').value = g.by
+  })
   collectGang()
+  collectGhost()
   $('#voice-result').classList.add('hidden')
   toast('已回填到下方表单，改完点「计算并预览」')
 }
@@ -1273,6 +1301,7 @@ function bind() {
   $$('#tabbar button').forEach((b) => { b.onclick = () => switchTab(b.dataset.tab) })
   $('#btn-goto-score').onclick = () => switchTab('score')
   $('#btn-add-gang').onclick = addGang
+  $('#btn-add-ghost').onclick = addGhost
   $('#btn-preview').onclick = doPreview
   $('#btn-preview-back').onclick = () => {
     $('#preview-modal').classList.add('hidden')

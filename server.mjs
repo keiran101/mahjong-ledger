@@ -95,7 +95,11 @@ function normalizeInput(code, body) {
     if (g.type === 'dian' && !SEATS.includes(g.from)) throw new Error('点杠需选择放杠者')
     return { type: g.type, by: g.by, from: g.from }
   }) : []
-  return { winner, dealer: meta.dealer, pattern, hasGhost, horses, gangEvents }
+  const ghostEvents = Array.isArray(body.ghostEvents) ? body.ghostEvents.map((g) => {
+    if (!SEATS.includes(g.by)) throw new Error('无效打鬼玩家')
+    return { by: g.by }
+  }) : []
+  return { winner, dealer: meta.dealer, pattern, hasGhost, horses, gangEvents, ghostEvents }
 }
 
 async function handleApi(req, res, pathname) {

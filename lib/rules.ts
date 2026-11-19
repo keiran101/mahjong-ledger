@@ -13,6 +13,8 @@
  *   v1.5 结算：只认赢家自己的马，N 张 → 胡分 ×N（1 张 = ×1 不翻，0 张 = 原分），
  *   其他座位的马一律不计、不产生任何收付
  * - 杠分立即结算：「N 倍底分」按底分 2 计 → 点杠 6 / 补杠各 2 / 暗杠各 4
+ * - 打鬼罚分（v1.7）：有鬼局打出鬼牌的那家，罚给其余每家各 ghost.penalty 分（默认 1 分/家，共 3 分）；
+ *   硬胡局没有鬼牌，自然不会有打鬼事件；一局可发生多次，逐次结算
  */
 
 export type Seat = 'E' | 'S' | 'W' | 'N' // 东 / 南 / 西 / 北
@@ -42,6 +44,9 @@ export interface RuleConfig {
     dianGang: number // 点杠：收放杠者几倍底分
     buGang: number // 补杠：收其他玩家各几倍底分
     anGang: number // 暗杠：收其他玩家各几倍底分
+  }
+  ghost: {
+    penalty: number // 打鬼罚分：打出鬼牌者付其余每家各几「分」（v1.7，默认 1 分/家）
   }
   unitPrice: number // 1 分 = ? 元（默认 1，可在房间改）
   allowDianpao: boolean // 本桌不启用点炮
@@ -104,6 +109,7 @@ export const RULES: RuleConfig = {
   },
   share: { zimoPerLoser: 1 },
   gang: { dianGang: 3, buGang: 1, anGang: 2 },
+  ghost: { penalty: 1 },
   unitPrice: 1,
   allowDianpao: false,
 }

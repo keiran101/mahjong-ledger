@@ -1,6 +1,6 @@
 /**
  * 计分引擎：纯函数，无 IO、无状态。
- * 输入「用户报的胡法档位 + 有无鬼 + 本局摸马牌面 + 杠分事件」，输出四家净分与逐项明细。
+ * 输入「用户报的胡法档位 + 有无鬼 + 本局摸马牌面 + 杠分事件 + 打鬼事件」，输出四家净分与逐项明细。
  * 摸马张数由 horseCountFor(hasGhost) 决定（有鬼 4 / 没鬼 6），引擎只遍历数组、不假设张数。
  */
 import {
@@ -16,6 +16,10 @@ export interface GangEvent {
   from?: Seat // 点杠时的放杠者
 }
 
+export interface GhostEvent {
+  by: Seat // 打出鬼牌的人（v1.7：罚给其余每家各 ghost.penalty 分）
+}
+
 export interface RoundInput {
   winner: Seat
   dealer: Seat
@@ -23,6 +27,7 @@ export interface RoundInput {
   hasGhost: boolean // true = 有鬼；false = 硬胡（无鬼）
   horses: string[] // 本局中马的马牌牌面，最多 = horseCountFor(hasGhost) 张
   gangEvents?: GangEvent[]
+  ghostEvents?: GhostEvent[] // 本局打鬼事件（v1.7），一局可多次
   manualOverride?: Partial<Record<Seat, number>> // 确认页手改：直接给最终净分
 }
 
@@ -42,6 +47,7 @@ export interface ScoreDetail {
   zimoPerLoser: number
   horseHits: HorseHit[]
   gangLines: string[]
+  ghostLines: string[] // 打鬼罚分流水（v1.7）
   autoPerPlayer: Record<Seat, number> // 自动算出的四家净分
   perPlayer: Record<Seat, number> // 手改后的最终净分
   isManual: boolean
@@ -94,7 +100,19 @@ export function scoreRound(input: RoundInput, rules: RuleConfig = RULES): ScoreD
     else per[s] -= oneShare
   }
 
-  // 3) 杠分：立即结算，独立流水，单位固定为「底分」，不随胡法分数缩放
+  // 3) 打鬼罚分（v1.7）：打出鬼牌者付其余每家各 ghost.penalty 分，逐次结算
+  const ghostLines: string[] = []
+  for (const g of input.ghostEvents ?? []) {
+    const amount = rules.ghost.penalty
+    for (const s of SEATS) {
+      if (s === g.by) continue
+      per[s] += amount
+      per[g.by] -= amount
+    }
+    ghostLines.push(`打鬼：${g.by} 付其余每家 ${amount} 分`)
+  }
+
+  // 4) 杠分：立即结算，独立流水，单位固定为「底分」，不随胡法分数缩放
   for (const g of input.gangEvents ?? []) {
     if (g.type === 'dian') {
       if (!g.from) throw new Error('点杠必须提供放杠者 from')
@@ -129,6 +147,7 @@ export function scoreRound(input: RoundInput, rules: RuleConfig = RULES): ScoreD
     zimoPerLoser: oneShare,
     horseHits,
     gangLines,
+    ghostLines,
     autoPerPlayer,
     perPlayer,
     isManual,

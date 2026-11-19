@@ -22,6 +22,7 @@ function show(title: string, input: RoundInput) {
   console.log(`  胡法=${d.tierName} ${d.hasGhost ? '有鬼' : '硬胡(无鬼)'}  基数=${d.base}分  每家付=${d.zimoPerLoser}分`)
   console.log(`  马: ${hits}`)
   if (d.gangLines.length) console.log(`  杠: ${d.gangLines.join('; ')}`)
+  if (d.ghostLines.length) console.log(`  打鬼: ${d.ghostLines.join('; ')}`)
   console.log(`  四家净分: ${row}`)
   console.log(`  零和校验: ${d.totalCheck}  ${d.totalCheck === 0 ? 'OK' : 'FAIL'}`)
   console.log(`  结算: ${transfers.map((t) => `${NAME[t.from]}→${NAME[t.to]} ${t.points}分/${t.amount}元`).join('  ') || '无需转账'}`)
@@ -193,4 +194,31 @@ assert.equal(d16.zimoPerLoser, 8, '鸡胡有鬼 2 × 4')
 assert.equal(d16.perPlayer.E, 24)
 for (const s of SEATS.filter((x) => x !== 'E')) assert.equal(d16.perPlayer[s], -8)
 
-console.log('\n全部算例通过：零和、马映射/张数/只认赢家马×N、杠分、手改、非法输入、底分与表值回归均 OK')
+// 例 17：打鬼罚分（v1.7）—— 南家打鬼，罚给其余每家各 1 分（共 3 分）
+// 鸡胡有鬼 base=2：赢家东收 6；南再付打鬼 3（每家 1）→ 东 +7、南 -5、西/北 各 -1
+const d17 = show('例17 鸡胡有鬼·南家打鬼一次', {
+  winner: 'E', dealer: 'E', pattern: '鸡胡', hasGhost: true,
+  horses: [],
+  ghostEvents: [{ by: 'S' }],
+})
+assert.equal(d17.ghostLines.length, 1)
+assert.equal(d17.perPlayer.E, 7)
+assert.equal(d17.perPlayer.S, -5)
+assert.equal(d17.perPlayer.W, -1)
+assert.equal(d17.perPlayer.N, -1)
+assert.equal(d17.totalCheck, 0)
+
+// 例 18：一局两次打鬼 + 杠分叠加 —— 打鬼者不同，逐次独立结算
+// 鸡胡有鬼 base=2；胡分 E+6 S/W/N -2；打鬼①西：西-3 E/S/N各+1；打鬼②北：北-3 E/S/W各+1；暗杠东：其余三家各付4
+// E: 6+1+1+12 = 20；S: -2+1+1-4 = -4；W: -2-3+1-4 = -8；N: -2+1-3-4 = -8
+const d18 = show('例18 鸡胡有鬼·两次打鬼+暗杠', {
+  winner: 'E', dealer: 'E', pattern: '鸡胡', hasGhost: true,
+  horses: [],
+  ghostEvents: [{ by: 'W' }, { by: 'N' }],
+  gangEvents: [{ type: 'an', by: 'E' }],
+})
+assert.equal(d18.ghostLines.length, 2)
+assert.deepEqual(d18.perPlayer, { E: 20, S: -4, W: -8, N: -8 })
+assert.equal(d18.totalCheck, 0)
+
+console.log('\n全部算例通过：零和、马映射/张数/只认赢家马×N、杠分、打鬼罚分、手改、非法输入、底分与表值回归均 OK')
