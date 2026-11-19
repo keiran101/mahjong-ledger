@@ -1,6 +1,7 @@
 /**
  * 计分引擎：纯函数，无 IO、无状态。
- * 输入「用户报的胡法档位 + 有无鬼 + 本局摸马牌面 + 杠分事件 + 打鬼事件」，输出四家净分与逐项明细。
+ * 输入「正常局：胡法档位 + 有无鬼 + 摸马牌面 + 杠分事件 + 打鬼事件」或
+ * 「炸胡局（v1.9）：炸胡者 + 报出的虚胡档位」，输出四家净分与逐项明细。
  * 摸马张数由 horseCountFor(hasGhost) 决定（有鬼 4 / 没鬼 6），引擎只遍历数组、不假设张数。
  */
 import {
@@ -21,11 +22,12 @@ export interface GhostEvent {
 }
 
 export interface RoundInput {
-  winner: Seat
+  winner?: Seat // 正常局：胡牌者；炸胡局为空
+  zhaHuSeat?: Seat // 炸胡局（v1.9）：报胡后被查出没胡成的人；此时 winner 必须为空
   dealer: Seat
-  pattern: string // 用户报的胡法档位名（必须是 scoreTable 中的别名）
+  pattern: string // 正常局=实际胡法档位；炸胡局=报出的（虚胡）档位，按它赔
   hasGhost: boolean // true = 有鬼；false = 硬胡（无鬼）
-  horses: string[] // 本局中马的马牌牌面，最多 = horseCountFor(hasGhost) 张
+  horses: string[] // 本局中马的马牌牌面，最多 = horseCountFor(hasGhost) 张；炸胡局必须为空（没有赢家不摸马）
   gangEvents?: GangEvent[]
   ghostEvents?: GhostEvent[] // 本局打鬼事件（v1.7），一局可多次
   manualOverride?: Partial<Record<Seat, number>> // 确认页手改：直接给最终净分
@@ -38,12 +40,14 @@ export interface HorseHit {
 }
 
 export interface ScoreDetail {
+  kind: 'win' | 'zhaHu' // v1.9：win=正常胡牌局；zhaHu=炸胡局
+  zhaHuSeat?: Seat // 炸胡局才有：报胡没胡成、赔三家的那个人
   tierName: string
-  base: number // 该局胡法分数（查表原始值，未乘马倍）
+  base: number // 该局胡法分数（查表原始值，未乘马倍）；炸胡局 = 按报的档位赔每家的金额
   hasGhost: boolean
-  horseCount: number // 本局摸马张数上限
+  horseCount: number // 本局摸马张数上限；炸胡局 = 0（没有赢家不摸马）
   ownHorseCount: number // 赢家自己的马张数（v1.5）
-  selfHorseTimes: number // 胡分倍数 = max(1, ownHorseCount)（v1.5）
+  selfHorseTimes: number // 胡分倍数（v1.8 按 timesMode）
   zimoPerLoser: number
   horseHits: HorseHit[]
   horseMode: HorseTimesMode // v1.8 自马算术模式快照
@@ -65,6 +69,11 @@ export function scoreRound(input: RoundInput, rules: RuleConfig = RULES): ScoreD
     throw new Error('本桌不启用点炮')
   }
 
+  // v1.9：炸胡局（报胡后被查出没胡成）—— winner 为空、zhaHuSeat 必填、不摸马
+  const isZhaHu = !input.winner && !!input.zhaHuSeat
+  if (!isZhaHu && !input.winner) throw new Error('请选择胡牌玩家')
+  if (isZhaHu && input.horses.length) throw new Error('炸胡局没有赢家，不摸马')
+
   const tier = rules.scoreTable.find((t) => t.patterns.includes(input.pattern))
   if (!tier) {
     const all = rules.scoreTable.flatMap((t) => t.patterns).join('、')
@@ -72,8 +81,8 @@ export function scoreRound(input: RoundInput, rules: RuleConfig = RULES): ScoreD
   }
 
   const base = input.hasGhost ? tier.withGhost : tier.withoutGhost
-  const horseCount = horseCountFor(input.hasGhost, rules)
-  if (input.horses.length > horseCount) {
+  const horseCount = isZhaHu ? 0 : horseCountFor(input.hasGhost, rules)
+  if (!isZhaHu && input.horses.length > horseCount) {
     throw new Error(`本局${input.hasGhost ? '有鬼' : '硬胡(没鬼)'}最多摸 ${horseCount} 张马，实际录入 ${input.horses.length} 张`)
   }
 
@@ -83,37 +92,53 @@ export function scoreRound(input: RoundInput, rules: RuleConfig = RULES): ScoreD
 
   // 1) 摸马（v1.8）：马牌按庄家映射座位；只认赢家自马，其他座位的马一律不计。
   //    翻倍算术随 rules.horse.timesMode 切换（additive ×(1+N) / geometric ×2ⁿ / flat 独立马分）。
+  //    炸胡局没有赢家，不摸马，跳过整段。
   const horseHits: HorseHit[] = []
   let ownHorseCount = 0
-  for (const tile of input.horses) {
-    const offset = horseOffsetOf(tile, rules)
-    if (offset === null) throw new Error(`无法识别马牌「${tile}」`)
-    const seat = seatFromOffset(offset, input.dealer)
-    const winnerSelf = seat === input.winner
-    if (winnerSelf) ownHorseCount++
-    horseHits.push({ tile, seat, winnerSelf })
-  }
-  const mode = rules.horse.timesMode
-  const selfTimes = selfHorseTimes(ownHorseCount, mode)
+  let selfTimes = 1
   const horseLines: string[] = []
-  if (mode === 'flat' && ownHorseCount > 0) {
-    // flat 模式：马分独立，每张自马其余三家各付 flatBonus 分，不随档位缩放
-    for (const h of horseHits) {
-      if (!h.winnerSelf) continue
-      for (const s of SEATS) {
-        if (s === input.winner) continue
-        per[s] -= rules.horse.flatBonus
-        per[input.winner] += rules.horse.flatBonus
+  if (!isZhaHu) {
+    for (const tile of input.horses) {
+      const offset = horseOffsetOf(tile, rules)
+      if (offset === null) throw new Error(`无法识别马牌「${tile}」`)
+      const seat = seatFromOffset(offset, input.dealer)
+      const winnerSelf = seat === input.winner
+      if (winnerSelf) ownHorseCount++
+      horseHits.push({ tile, seat, winnerSelf })
+    }
+    const mode = rules.horse.timesMode
+    selfTimes = selfHorseTimes(ownHorseCount, mode)
+    if (mode === 'flat' && ownHorseCount > 0) {
+      // flat 模式：马分独立，每张自马其余三家各付 flatBonus 分，不随档位缩放
+      for (const h of horseHits) {
+        if (!h.winnerSelf) continue
+        for (const s of SEATS) {
+          if (s === input.winner) continue
+          per[s] -= rules.horse.flatBonus
+          per[input.winner] += rules.horse.flatBonus
+        }
+        horseLines.push(`自马 ${h.tile}：其余三家各付 ${rules.horse.flatBonus} 分`)
       }
-      horseLines.push(`自马 ${h.tile}：其余三家各付 ${rules.horse.flatBonus} 分`)
     }
   }
 
-  // 2) 胡牌主分：只有自摸，三家各付 1 份，赢家收 3 份；胡分按马倍缩放（flat 模式 ×1）
-  const oneShare = base * selfTimes * rules.share.zimoPerLoser
-  for (const s of SEATS) {
-    if (s === input.winner) per[s] += oneShare * 3
-    else per[s] -= oneShare
+  // 2) 主分。
+  //    正常局：只有自摸，三家各付 1 份，赢家收 3 份；胡分按马倍缩放（flat 模式 ×1）。
+  //    炸胡局（v1.9）：胡什么牌赔什么牌 —— 报出的档位若有鬼胡成，三家各付 base，
+  //    炸胡者把三份全包：付每家 base、共 3×base；硬胡按硬胡档位赔（hasGhost 决定）。
+  let oneShare: number
+  if (isZhaHu) {
+    oneShare = base * rules.share.zimoPerLoser
+    for (const s of SEATS) {
+      if (s === input.zhaHuSeat) per[s] -= oneShare * 3
+      else per[s] += oneShare
+    }
+  } else {
+    oneShare = base * selfTimes * rules.share.zimoPerLoser
+    for (const s of SEATS) {
+      if (s === input.winner) per[s] += oneShare * 3
+      else per[s] -= oneShare
+    }
   }
 
   // 3) 打鬼罚分（v1.7）：打出鬼牌者付其余每家各 ghost.penalty 分，逐次结算
@@ -154,6 +179,8 @@ export function scoreRound(input: RoundInput, rules: RuleConfig = RULES): ScoreD
   const totalCheck = SEATS.reduce((sum, s) => sum + perPlayer[s], 0)
 
   return {
+    kind: isZhaHu ? 'zhaHu' : 'win',
+    ...(isZhaHu ? { zhaHuSeat: input.zhaHuSeat } : {}),
     tierName: input.pattern,
     base,
     hasGhost: input.hasGhost,
@@ -162,7 +189,7 @@ export function scoreRound(input: RoundInput, rules: RuleConfig = RULES): ScoreD
     selfHorseTimes: selfTimes,
     zimoPerLoser: oneShare,
     horseHits,
-    horseMode: mode,
+    horseMode: rules.horse.timesMode,
     horseLines,
     gangLines,
     ghostLines,

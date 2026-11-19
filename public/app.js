@@ -17,7 +17,7 @@ function horseMax(hasGhost) {
   return hasGhost ? 4 : 6
 }
 function freshForm() {
-  return { winner: null, pattern: null, hasGhost: true, horses: new Array(horseMax(true)).fill(''), gangEvents: [], ghostEvents: [] }
+  return { winner: null, zhaHu: false, pattern: null, hasGhost: true, horses: new Array(horseMax(true)).fill(''), gangEvents: [], ghostEvents: [] }
 }
 
 const S = {
@@ -241,9 +241,13 @@ function recordHtml(e, compact) {
     const v = Number(net[s]) || 0
     return `<span class="${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}">${SN[s]} ${fmt(v)}</span>`
   }).join('')
+  const isZhaHu = inp.kind === 'zhaHu' || !!inp.zhaHuSeat
+  const mainText = isZhaHu
+    ? `<span class="badge">炸胡</span> ${seatLabel(inp.zhaHuSeat)} 报${inp.pattern || ''} ${inp.hasGhost ? '有鬼' : '硬胡'}`
+    : `${seatLabel(inp.winner)} ${inp.pattern || '胡牌'} ${inp.hasGhost ? '有鬼' : '硬胡'}`
   return `<div class="record ${e.isVoided ? 'voided' : ''}" data-detail="${e.id}" role="button" tabindex="0" aria-label="查看第 ${e.roundNo} 局明细">
     <div class="r-top"><span>第 ${e.roundNo} 局 · ${fmtTime(e.createdAt)}</span><span>${e.author || '—'} 记</span></div>
-    <div class="r-main">${seatLabel(inp.winner)} ${inp.pattern || '胡牌'} ${inp.hasGhost ? '有鬼' : '硬胡'}
+    <div class="r-main">${mainText}
       ${e.isCorrected ? '<span class="badge manual">已手改</span>' : ''}
       ${e.isVoided ? '<span class="badge">已作废</span>' : ''}</div>
     <div class="r-net">${netRow}</div>
@@ -277,20 +281,27 @@ function openDetail(id) {
   let html = `<p class="muted small">${fmtTime(e.createdAt)} · ${e.author || '—'} 记 ${badges}</p>`
   if (e.isVoided) html += `<p class="muted small">此局已作废，分数未计入总分。</p>`
   if (d.tierName || inp.pattern) {
+    const isZhaHu = d.kind === 'zhaHu' || !!inp.zhaHuSeat || !!d.zhaHuSeat
     const selfTimes = d.selfHorseTimes ?? 1
     const ownN = d.ownHorseCount ?? 0
     const timesLabel = selfTimes > 1 ? `（自己的马 ${ownN} 张 → 胡分 ×${selfTimes}）`
       : d.horseMode === 'flat' && ownN > 0 ? `（自己的马 ${ownN} 张 · 独立马分）` : ''
-    html += kv('胡法', `<b>${d.tierName || inp.pattern}</b>（${d.hasGhost ?? inp.hasGhost ? '有鬼' : '硬胡'}）`)
-    if (d.base != null) html += kv('档位基数', `<b class="hl">${d.base} 分</b>${timesLabel}`)
-    if (d.zimoPerLoser != null) html += kv('三家各付', `${d.zimoPerLoser} 分，赢家收 ${d.zimoPerLoser * 3} 分`)
-    if (d.horseCount != null) {
-      const horse = (d.horseHits || []).length
-        ? d.horseHits.map((h) => `${h.tile}→${seatLabel(h.seat)}${h.winnerSelf ? '(本人,计翻倍)' : '(不计)'}`).join('、')
-        : '无'
-      html += kv(`摸马 ${d.horseCount} 张`, horse)
+    if (isZhaHu) {
+      const zhSeat = d.zhaHuSeat || inp.zhaHuSeat
+      html += kv('炸胡', `<b>${zhSeat ? seatLabel(zhSeat) : '—'}</b> 报「<b>${d.tierName || inp.pattern}</b>」${d.hasGhost ?? inp.hasGhost ? '（有鬼）' : '（硬胡）'}，没胡成`)
+      if (d.base != null) html += kv('赔分（胡什么牌赔什么牌）', `其余每家收 <b class="hl">${d.base} 分</b>，炸胡者共付 ${d.base * 3} 分`)
+    } else {
+      html += kv('胡法', `<b>${d.tierName || inp.pattern}</b>（${d.hasGhost ?? inp.hasGhost ? '有鬼' : '硬胡'}）`)
+      if (d.base != null) html += kv('档位基数', `<b class="hl">${d.base} 分</b>${timesLabel}`)
+      if (d.zimoPerLoser != null) html += kv('三家各付', `${d.zimoPerLoser} 分，赢家收 ${d.zimoPerLoser * 3} 分`)
+      if (d.horseCount != null) {
+        const horse = (d.horseHits || []).length
+          ? d.horseHits.map((h) => `${h.tile}→${seatLabel(h.seat)}${h.winnerSelf ? '(本人,计翻倍)' : '(不计)'}`).join('、')
+          : '无'
+        html += kv(`摸马 ${d.horseCount} 张`, horse)
+      }
+      if ((d.horseLines || []).length) html += kv('自马加分', d.horseLines.join('；'))
     }
-    if ((d.horseLines || []).length) html += kv('自马加分', d.horseLines.join('；'))
     if ((d.gangLines || []).length) html += kv('杠分', d.gangLines.join('；'))
     if ((d.ghostLines || []).length) html += kv('打鬼罚分', d.ghostLines.join('；'))
     if (e.isCorrected) {
@@ -369,6 +380,15 @@ function updateHorseHint() {
 
 function renderScoreForm() {
   const f = S.form
+  // v1.9 炸胡模式开关：正常局选「谁胡了」；炸胡局选「谁炸胡了」（报胡没胡成的人）
+  $('#step1').textContent = f.zhaHu ? '1 · 谁炸胡了（报胡没胡成）' : '1 · 谁胡了'
+  $('#step2').textContent = f.zhaHu ? '2 · 报出的胡法（胡什么牌赔什么牌）' : '2 · 报胡型'
+  document.querySelector('[aria-labelledby="step4"]').classList.toggle('hidden', f.zhaHu)
+  const zb = $('#btn-zhahu')
+  zb.classList.toggle('active', f.zhaHu)
+  zb.setAttribute('aria-pressed', String(f.zhaHu))
+  zb.onclick = () => { f.zhaHu = !f.zhaHu; renderScoreForm() }
+
   $('#winner-group').innerHTML = SEATS.map((s) =>
     `<button type="button" class="seat-btn ${f.winner === s ? 'active' : ''}" data-seat="${s}" aria-pressed="${f.winner === s}"><span class="seat-name">${seatLabel(s)}</span><small>${SN[s]}家</small></button>`).join('')
   $$('#winner-group .seat-btn').forEach((b) => {
@@ -466,20 +486,16 @@ function collectGang() {
 
 async function doPreview() {
   const f = S.form
-  if (!f.winner) return toast('先选谁胡了')
-  if (!f.pattern) return toast('先报一个胡型')
+  if (!f.winner) return toast(f.zhaHu ? '先选谁炸胡了' : '先选谁胡了')
+  if (!f.pattern) return toast(f.zhaHu ? '先选炸胡时报出的胡法' : '先报一个胡型')
   collectGang()
   collectGhost()
+  const body = f.zhaHu
+    ? { kind: 'zhaHu', zhaHuSeat: f.winner, pattern: f.pattern, hasGhost: f.hasGhost, horses: [], gangEvents: f.gangEvents, ghostEvents: f.ghostEvents }
+    : { winner: f.winner, pattern: f.pattern, hasGhost: f.hasGhost, horses: f.horses.filter(Boolean), gangEvents: f.gangEvents, ghostEvents: f.ghostEvents }
   return busy($('#btn-preview'), '计算中…', async () => {
     try {
-      const r = await api(`/api/rooms/${S.code}/preview`, {
-        winner: f.winner,
-        pattern: f.pattern,
-        hasGhost: f.hasGhost,
-        horses: f.horses.filter(Boolean),
-        gangEvents: f.gangEvents,
-        ghostEvents: f.ghostEvents,
-      })
+      const r = await api(`/api/rooms/${S.code}/preview`, body)
       S.preview = r
       S.previewSource = 'manual'
       showPreview(r.detail, r.input)
@@ -512,7 +528,8 @@ function bindNetEdit(container, sumEl) {
 }
 
 function showPreview(d, input) {
-  $('#preview-title').textContent = '本局算分预览'
+  const isZhaHu = d.kind === 'zhaHu'
+  $('#preview-title').textContent = isZhaHu ? '炸胡罚分预览' : '本局算分预览'
   const horse = d.horseHits.length
     ? d.horseHits.map((h) => `${h.tile}→${seatLabel(h.seat)}${h.winnerSelf ? '(本人,计翻倍)' : '(不计)'}`).join('、')
     : '无'
@@ -520,13 +537,22 @@ function showPreview(d, input) {
   const ownN = d.ownHorseCount ?? 0
   const timesLabel = selfTimes > 1 ? `（自己的马 ${ownN} 张 → 胡分 ×${selfTimes}）`
     : d.horseMode === 'flat' && ownN > 0 ? `（自己的马 ${ownN} 张 · 独立马分）` : ''
-  let html = kv('胡法', `<b>${d.tierName}</b>（${d.hasGhost ? '有鬼' : '硬胡'}）`)
-  html += kv('档位基数', `<b class="hl">${d.base} 分</b>${timesLabel}`)
-  html += kv('三家各付', `${d.zimoPerLoser} 分，赢家收 ${d.zimoPerLoser * 3} 分`)
-  html += kv(`摸马 ${d.horseCount ?? ''} 张`, horse)
-  if ((d.horseLines || []).length) html += kv('自马加分', d.horseLines.join('；'))
-  if (d.gangLines.length) html += kv('杠分', d.gangLines.join('；'))
-  if ((d.ghostLines || []).length) html += kv('打鬼罚分', d.ghostLines.join('；'))
+  let html
+  if (isZhaHu) {
+    html = kv('炸胡', `<b>${seatLabel(d.zhaHuSeat)}</b> 报「<b>${d.tierName}</b>」${d.hasGhost ? '（有鬼）' : '（硬胡）'}，没胡成`)
+    html += kv('罚分口径', '胡什么牌赔什么牌')
+    html += kv('赔分', `其余每家收 <b class="hl">${d.base} 分</b>，炸胡者共付 ${d.base * 3} 分`)
+    if (d.gangLines.length) html += kv('杠分', d.gangLines.join('；'))
+    if ((d.ghostLines || []).length) html += kv('打鬼罚分', d.ghostLines.join('；'))
+  } else {
+    html = kv('胡法', `<b>${d.tierName}</b>（${d.hasGhost ? '有鬼' : '硬胡'}）`)
+    html += kv('档位基数', `<b class="hl">${d.base} 分</b>${timesLabel}`)
+    html += kv('三家各付', `${d.zimoPerLoser} 分，赢家收 ${d.zimoPerLoser * 3} 分`)
+    html += kv(`摸马 ${d.horseCount ?? ''} 张`, horse)
+    if ((d.horseLines || []).length) html += kv('自马加分', d.horseLines.join('；'))
+    if (d.gangLines.length) html += kv('杠分', d.gangLines.join('；'))
+    if ((d.ghostLines || []).length) html += kv('打鬼罚分', d.ghostLines.join('；'))
+  }
   $('#preview-detail').innerHTML = html
   $('#preview-net').innerHTML = SEATS.map((s) =>
     `<label><span>${seatLabel(s)}</span><input type="number" inputmode="numeric" data-seat="${s}" value="${d.perPlayer[s]}"></label>`).join('')
@@ -554,7 +580,9 @@ async function confirmScore() {
       await loadData()
       switchTab('board')
       toast(st?.dealer && st.dealer !== input.dealer
-        ? `已记入账本 · 赢家坐庄，${seatLabel(st.dealer)}家接庄`
+        ? (input.kind === 'zhaHu'
+          ? `已记入账本 · 诈胡做庄，${seatLabel(st.dealer)}家接庄`
+          : `已记入账本 · 赢家坐庄，${seatLabel(st.dealer)}家接庄`)
         : '已记入账本')
     } catch (e) { toast(e.message) }
   })
@@ -838,7 +866,8 @@ function fillFormFromParsed() {
   if (!r) return
   const inp = r.input
   S.form = {
-    winner: inp.winner,
+    winner: inp.winner || inp.zhaHuSeat || null,
+    zhaHu: inp.kind === 'zhaHu' || !!inp.zhaHuSeat,
     pattern: inp.pattern,
     hasGhost: inp.hasGhost,
     horses: Array.from({ length: horseMax(inp.hasGhost) }, (_, i) => inp.horses[i] || ''),

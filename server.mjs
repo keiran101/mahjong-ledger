@@ -79,14 +79,14 @@ function ruleMeta() {
   }
 }
 
-/** 校验并规范化记分输入，服务端始终用房间当前庄家，不信任前端传入 */
+/** 校验并规范化记分输入，服务端始终用房间当前庄家，不信任前端传入。
+ *  v1.9：kind='zhaHu' 为炸胡局 —— zhaHuSeat 必填、无 winner、不摸马（有 horses 直接拒绝）。 */
 function normalizeInput(code, body) {
   const meta = getRoomMeta(code)
   if (!meta) throw new Error('房间不存在')
-  const winner = body.winner
-  if (!SEATS.includes(winner)) throw new Error('请选择胡牌玩家')
+  const isZhaHu = body.kind === 'zhaHu' || (!body.winner && !!body.zhaHuSeat)
   const pattern = String(body.pattern || '').trim()
-  if (!pattern) throw new Error('请选择胡法')
+  if (!pattern) throw new Error(isZhaHu ? '请选择炸胡时报出的胡法（胡什么牌赔什么牌）' : '请选择胡法')
   const hasGhost = body.hasGhost !== false
   const horses = Array.isArray(body.horses) ? body.horses.filter((x) => x && String(x).trim()).map((x) => String(x).trim()) : []
   const gangEvents = Array.isArray(body.gangEvents) ? body.gangEvents.map((g) => {
@@ -99,7 +99,18 @@ function normalizeInput(code, body) {
     if (!SEATS.includes(g.by)) throw new Error('无效打鬼玩家')
     return { by: g.by }
   }) : []
-  return { winner, dealer: meta.dealer, pattern, hasGhost, horses, gangEvents, ghostEvents }
+
+  if (isZhaHu) {
+    const zhaHuSeat = body.zhaHuSeat
+    if (!SEATS.includes(zhaHuSeat)) throw new Error('请选择炸胡玩家')
+    if (body.winner && SEATS.includes(body.winner)) throw new Error('炸胡局没有赢家，请勿同时选择胡牌玩家')
+    if (horses.length) throw new Error('炸胡局没有赢家，不摸马')
+    return { kind: 'zhaHu', zhaHuSeat, dealer: meta.dealer, pattern, hasGhost, horses: [], gangEvents, ghostEvents }
+  }
+
+  const winner = body.winner
+  if (!SEATS.includes(winner)) throw new Error('请选择胡牌玩家')
+  return { kind: 'win', winner, dealer: meta.dealer, pattern, hasGhost, horses, gangEvents, ghostEvents }
 }
 
 async function handleApi(req, res, pathname) {

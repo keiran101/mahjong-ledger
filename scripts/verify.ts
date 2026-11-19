@@ -19,7 +19,8 @@ function show(title: string, input: RoundInput, rules: typeof RULES = RULES) {
   assertBalanced(d.perPlayer, transfers)
 
   console.log(`\n【${title}】`)
-  console.log(`  胡法=${d.tierName} ${d.hasGhost ? '有鬼' : '硬胡(无鬼)'}  基数=${d.base}分  每家付=${d.zimoPerLoser}分  马倍=${d.selfHorseTimes}(${d.horseMode})`)
+  const kindTag = d.kind === 'zhaHu' ? `[炸胡·${NAME[d.zhaHuSeat]}] ` : ''
+  console.log(`  ${kindTag}胡法=${d.tierName} ${d.hasGhost ? '有鬼' : '硬胡(无鬼)'}  基数=${d.base}分  每家付=${d.zimoPerLoser}分  马倍=${d.selfHorseTimes}(${d.horseMode})`)
   console.log(`  马: ${hits}`)
   if (d.horseLines.length) console.log(`  马分: ${d.horseLines.join('; ')}`)
   if (d.gangLines.length) console.log(`  杠: ${d.gangLines.join('; ')}`)
@@ -264,4 +265,43 @@ assert.equal(d18.ghostLines.length, 2)
 assert.deepEqual(d18.perPlayer, { E: 20, S: -4, W: -8, N: -8 })
 assert.equal(d18.totalCheck, 0)
 
-console.log('\n全部算例通过：零和、马映射/张数/自马三算术开关、杠分、打鬼罚分、手改、非法输入、底分与表值回归均 OK')
+// 例 23：炸胡（v1.9）—— 南家报鸡胡有鬼被查出没胡成，胡什么牌赔什么牌
+// base=2：其余每家收 2，南家共付 6；无马、无赢家
+const d23 = show('例23 鸡胡有鬼·南家炸胡', {
+  zhaHuSeat: 'S', dealer: 'E', pattern: '鸡胡', hasGhost: true, horses: [],
+})
+assert.equal(d23.kind, 'zhaHu')
+assert.equal(d23.zhaHuSeat, 'S')
+assert.equal(d23.horseCount, 0)
+assert.equal(d23.base, 2)
+assert.equal(d23.perPlayer.S, -6)
+assert.equal(d23.perPlayer.E, 2)
+assert.equal(d23.perPlayer.W, 2)
+assert.equal(d23.perPlayer.N, 2)
+assert.equal(d23.totalCheck, 0)
+
+// 例 24：炸胡报大牌 + 杠分叠加 —— 北家报清一色硬胡（base 4×2×2=16）炸胡，暗杠东
+// 北家赔每家 16（共 48）；暗杠东收其余三家各 4
+// E: 16+12=28；S: 16-4=12；W: 16-4=12；N: -48-4=-52
+const d24 = show('例24 清一色硬胡·北家炸胡+暗杠', {
+  zhaHuSeat: 'N', dealer: 'E', pattern: '清一色', hasGhost: false, horses: [],
+  gangEvents: [{ type: 'an', by: 'E' }],
+})
+assert.equal(d24.kind, 'zhaHu')
+assert.equal(d24.base, 16, '清一色硬胡 = 4×2×2')
+assert.deepEqual(d24.perPlayer, { E: 28, S: 12, W: 12, N: -52 })
+assert.equal(d24.totalCheck, 0)
+
+// 例 25：炸胡局录入马牌必须拒绝（没有赢家不摸马）
+assert.throws(
+  () => scoreRound({ zhaHuSeat: 'E', dealer: 'E', pattern: '鸡胡', hasGhost: true, horses: ['5万'] }),
+  /不摸马/,
+  '炸胡局带 horses 应报错'
+)
+
+// 例 26：winner 与 zhaHuSeat 同时给出时，按正常局结算（winner 优先，zhaHuSeat 被忽略）
+const d26 = scoreRound({ winner: 'E', zhaHuSeat: 'S', dealer: 'E', pattern: '鸡胡', hasGhost: true, horses: [] })
+assert.equal(d26.kind, 'win')
+assert.equal(d26.zhaHuSeat, undefined)
+
+console.log('\n全部算例通过：零和、马映射/张数/自马三算术开关、杠分、打鬼罚分、炸胡罚分、手改、非法输入、底分与表值回归均 OK')

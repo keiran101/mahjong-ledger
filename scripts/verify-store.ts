@@ -64,7 +64,28 @@ assert.equal(dealerOf(code), 'N', '手改分数不影响庄家')
 assert.ok(SEATS.includes(dealerOf(code)), '庄家必须是合法座位')
 assert.equal(RULES.baseUnit, 2)
 
+// 8. v1.9 炸胡：诈胡做庄 —— 炸胡局落账后庄家 = 炸胡者
+const zhaHuRound = (code2: string, dealer: Seat, zhaHuSeat: Seat) => ({
+  input: { kind: 'zhaHu', zhaHuSeat, dealer, pattern: '鸡胡', hasGhost: true, horses: [], gangEvents: [] },
+  detail: {},
+  net: Object.fromEntries(SEATS.map((s) => [s, s === zhaHuSeat ? -6 : 2])),
+})
+const id4 = store.appendScore(code, { payload: zhaHuRound(code, 'N', 'S'), author: '验证' })
+assert.equal(dealerOf(code), 'S', '炸胡局落账后庄家=炸胡者（诈胡做庄）')
+
+// 9. 作废炸胡局 → 庄家回滚到剩余最后一局（局3）的赢家 N
+store.voidEvent(code, id4, '验证')
+assert.equal(dealerOf(code), 'N', '作废炸胡局后庄家回滚到剩余最后一局的赢家')
+
+// 10. 正常局之后炸胡，再作废正常局 → 庄家=炸胡局炸胡者
+const id5 = store.appendScore(code, { payload: round(code, 'N', 'W'), author: '验证' })
+assert.equal(dealerOf(code), 'W', '局4落账，赢家 W 坐庄')
+const id6 = store.appendScore(code, { payload: zhaHuRound(code, 'W', 'E'), author: '验证' })
+assert.equal(dealerOf(code), 'E', '局5炸胡，炸胡者 E 接庄')
+store.voidEvent(code, id5, '验证')
+assert.equal(dealerOf(code), 'E', '作废前面的正常局，庄家仍=最后一局炸胡者 E')
+
 const tmpDb = process.env.MJ_DB as string
-console.log('\n【账本验证】默认庄东 / 手选兜底 / 落账赢家坐庄 / 作废回滚 / 手改不动庄  全部通过')
+console.log('\n【账本验证】默认庄东 / 手选兜底 / 落账赢家坐庄 / 作废回滚 / 手改不动庄 / 炸胡做庄+回滚  全部通过')
 // 临时库留在 os.tmpdir()（SQLite 连接仍持有句柄，Windows 下立即删除会 EBUSY）；系统会定期清理 %TEMP%
 console.log(`临时库（可手动删）: ${tmpDb}`)
